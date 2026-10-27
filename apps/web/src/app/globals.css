@@ -410,7 +410,8 @@ button {
   }
 }
 
-/* Reduced motion (§65): replace movement with fades. */
+/* Reduced motion (§65): replace movement with fades. Applies when the OS
+   requests it, or when the setting forces it via [data-reduced-motion]. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -428,6 +429,24 @@ button {
   .board-cell.is-legal:hover {
     transform: none;
   }
+}
+
+/* Manual override from Settings (§65). */
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: var(--motion-fast) !important;
+  scroll-behavior: auto !important;
+}
+
+html[data-reduced-motion="true"] .playing-card.is-selected {
+  transform: none;
+}
+
+html[data-reduced-motion="true"] .board-cell.is-legal:hover {
+  transform: none;
 }
 
 /* High-contrast friendly text (§64) */

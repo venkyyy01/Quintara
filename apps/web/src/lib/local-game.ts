@@ -58,6 +58,8 @@ interface LocalGameState {
   toasts: Toast[];
   botThinking: boolean;
   lastMoveSummary: string | null;
+  /** Most recent marker placement, for the drop animation (§45). */
+  lastPlacedCellId: string | null;
 
   start: (config: {
     mode: LocalMode;
@@ -101,9 +103,22 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
 
     const projected = projectStateForViewer(next, viewerId);
 
+    // Drop a card selection that is no longer playable for the viewer:
+    // selections must never leak across handoffs or into finished games.
+    const selected = get().selectedCardId;
+    const selectionStillPlayable =
+      next.status === "ACTIVE" &&
+      selected !== null &&
+      (projected.legalActions?.mainActions ?? []).some(
+        (action) => action.cardId === selected,
+      );
+
     set({
       state: next,
       projected,
+      ...(selected !== null && !selectionStillPlayable
+        ? { selectedCardId: null }
+        : {}),
       ...(next.status !== "ACTIVE" ? { awaitingHandoff: false } : {}),
     });
 
@@ -163,9 +178,15 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
     if (!current) return;
     try {
       const result = applyCommand(current, command);
-      set({ botThinking: false });
+      set({
+        botThinking: false,
+        ...("targetCellId" in command
+          ? { lastPlacedCellId: command.targetCellId }
+          : {}),
+      });
+      const previousActive = currentPlayerId(current);
       refresh(result.state);
-      afterEvents(result.state, command);
+      afterEvents(result.state, command, previousActive);
     } catch (error) {
       set({ botThinking: false });
       if (error instanceof EngineError) {
@@ -181,7 +202,11 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
     }
   }
 
-  function afterEvents(state: GameState, command: GameCommand): void {
+  function afterEvents(
+    state: GameState,
+    command: GameCommand,
+    previousActive: string | null,
+  ): void {
     const summaries: string[] = [];
     if (command.type === "PLAY_NORMAL_CARD") {
       const card = state.cards[command.cardId];
@@ -222,7 +247,14 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
 
     const nextActive = currentPlayerId(state);
     const mode = get().mode;
-    if (mode === "PASS_AND_PLAY" && nextActive) {
+    // §21 handoff privacy: the screen only re-arms when the seat changed.
+    // Same-player sub-steps (dead-card exchange, ambiguous line selection)
+    // must not interrupt the acting player mid-turn.
+    if (
+      mode === "PASS_AND_PLAY" &&
+      nextActive !== null &&
+      nextActive !== previousActive
+    ) {
       set({ awaitingHandoff: true });
     }
   }
@@ -238,6 +270,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
     toasts: [],
     botThinking: false,
     lastMoveSummary: null,
+    lastPlacedCellId: null,
 
     start: ({ mode, seats, difficulty }) => {
       if (botTimer) clearTimeout(botTimer);
@@ -262,6 +295,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
         awaitingHandoff: mode === "PASS_AND_PLAY",
         toasts: [notice("Game started — good luck!", "success")],
         lastMoveSummary: null,
+        lastPlacedCellId: null,
       });
       refresh(started);
     },
@@ -282,6 +316,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
         selectedCardId: null,
         awaitingHandoff: false,
         botThinking: false,
+        lastPlacedCellId: null,
       });
     },
 

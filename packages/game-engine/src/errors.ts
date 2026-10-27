@@ -28,7 +28,8 @@ export type EngineErrorCode =
   | "INVALID_TARGET"
   | "INVALID_COMMAND"
   | "INVALID_GAME_CONFIG"
-  | "INVALID_BOARD_DEFINITION";
+  | "INVALID_BOARD_DEFINITION"
+  | "CARD_CONSERVATION_VIOLATED";
 
 export class EngineError extends Error {
   public readonly code: EngineErrorCode;
@@ -79,6 +80,8 @@ const USER_MESSAGES: Record<EngineErrorCode, string> = {
   INVALID_COMMAND: "That action could not be understood.",
   INVALID_GAME_CONFIG: "That game configuration is not supported.",
   INVALID_BOARD_DEFINITION: "The board configuration is invalid.",
+  CARD_CONSERVATION_VIOLATED:
+    "The deck is out of cards — that should not be possible. Please restart the match.",
 };
 
 export function engineErrorMessage(code: EngineErrorCode): string {

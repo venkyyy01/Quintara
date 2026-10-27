@@ -218,11 +218,14 @@ function expertChoice(
   let bestScore = -Infinity;
 
   for (const action of actions) {
-    let score = scoreMainAction({ state, playerId }, action) * 0.6;
+    // Average the heuristic prior and the abstract rollouts together —
+    // dividing the accumulated sum by 24 alone would dilute the heuristic
+    // 24-fold and let noise pick among near-ties.
+    let total = scoreMainAction({ state, playerId }, action) * 0.6;
     for (let rollout = 0; rollout < 24; rollout++) {
-      score += rolloutScore(state, myTeam, action, context);
+      total += rolloutScore(state, myTeam, action, context);
     }
-    score /= 24;
+    const score = total / 24;
     if (score > bestScore) {
       bestScore = score;
       best = action;

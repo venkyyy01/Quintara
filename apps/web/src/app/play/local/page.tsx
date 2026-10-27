@@ -51,9 +51,10 @@ function LocalPlay() {
   const [names, setNames] = useState<string[]>(["You", "Rival"]);
 
   useEffect(() => {
-    if (initialMode && !game.state) {
-      // Auto-start quick play with defaults.
-      if (params.get("quick")) {
+    if (initialMode === "SOLO" && !game.state) {
+      // Auto-start quick play and the Daily Challenge tile, both of which
+      // advertise a one-tap solo game (§57).
+      if (params.get("quick") || params.get("challenge")) {
         startGame("SOLO");
       }
     }
@@ -100,6 +101,38 @@ function LocalPlay() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projected?.turnPhase, projected?.pendingSequenceOptions]);
+
+  // A finished local match leaves the engine state behind; without a
+  // projection the screen would be blank — offer quick actions instead.
+  if (state && !projected) {
+    return (
+      <main className="mx-auto flex min-h-[100dvh] w-full max-w-2xl flex-col items-center justify-center gap-6 px-6 text-center">
+        <h1 className="text-3xl font-bold">Table ready</h1>
+        <p className="max-w-sm text-secondary">
+          The previous match has ended. Deal a fresh game or head back home.
+        </p>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => game.rematch()}
+          >
+            New Game
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              game.quit();
+              router.push("/");
+            }}
+          >
+            Home
+          </button>
+        </div>
+      </main>
+    );
+  }
 
   if (!projected || !state || !mode) {
     return (

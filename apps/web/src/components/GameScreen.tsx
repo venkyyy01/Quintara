@@ -25,6 +25,7 @@ import {
   VictoryModal,
 } from "./Modals";
 import type { GameState } from "@quintara/game-engine";
+import { useSettings } from "@/lib/settings";
 
 export interface HandoffState {
   pending: boolean;
@@ -53,6 +54,8 @@ export interface GameScreenProps {
   onExchange: (cardId: string) => void;
   onRematch: () => void;
   onQuit: () => void;
+  /** Online rooms: viewers who are not the host see a waiting state instead. */
+  hideRematch?: boolean;
   selectedCardId: string | null;
 }
 
@@ -67,10 +70,14 @@ export function GameScreen(props: GameScreenProps) {
     handoff,
     sequenceSelection,
     connectionLabel,
+    hideRematch,
     selectedCardId,
   } = props;
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // User preferences (§62) drive legal-move visuals and animation pacing.
+  const showLegalMoves = useSettings((s) => s.showLegalMoves);
+  const animationSpeed = useSettings((s) => s.animationSpeed);
 
   const legalTargets = useMemo(() => {
     const set = new Set<CellId>();
@@ -158,7 +165,7 @@ export function GameScreen(props: GameScreenProps) {
 
         {/* Board — dominant */}
         <div className="relative order-1 mx-auto w-full max-w-[min(100%,720px)] lg:order-2 lg:max-w-none">
-          {sequenceSelection && (
+          {sequenceSelection && viewerIsActing && (
             <div className="mb-3">
               <SequenceSelectionPanel
                 options={sequenceSelection.options}
@@ -171,12 +178,12 @@ export function GameScreen(props: GameScreenProps) {
             selectedCardId={selectedCardId}
             legalTargets={legalTargets}
             removableTargets={removableTargets}
-            showLegalMoves={true}
-            animationSpeed={1}
+            showLegalMoves={showLegalMoves}
+            animationSpeed={animationSpeed}
             lastPlacedCellId={lastPlacedCellId}
             onCellClick={props.onCellClick}
           />
-          <SequenceTraceOverlay projected={projected} speed={1} />
+          <SequenceTraceOverlay projected={projected} speed={animationSpeed} />
         </div>
 
         {/* Match info */}
@@ -232,6 +239,7 @@ export function GameScreen(props: GameScreenProps) {
           viewerId={viewerId}
           onRematch={props.onRematch}
           onQuit={props.onQuit}
+          hideRematch={hideRematch === true}
         />
       )}
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}

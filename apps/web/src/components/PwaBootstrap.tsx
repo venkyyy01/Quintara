@@ -34,12 +34,26 @@ export function PwaBootstrap() {
       else window.addEventListener("load", register, { once: true });
     }
 
+    // §65: manual reduced-motion overrides the OS default so pixel-sensitive
+    // players can force calm motion even when their system keeps animations on.
+    const applyReducedMotion = () => {
+      const setting = useSettings.getState().reducedMotion;
+      const root = document.documentElement;
+      if (setting === true) root.dataset.reducedMotion = "true";
+      else delete root.dataset.reducedMotion;
+    };
+    applyReducedMotion();
+    const unsubscribe = useSettings.subscribe(applyReducedMotion);
+
     const onPrompt = (event: Event) => {
       event.preventDefault();
       setInstallEvent(event as BeforeInstallPromptEvent);
     };
     window.addEventListener("beforeinstallprompt", onPrompt);
-    return () => window.removeEventListener("beforeinstallprompt", onPrompt);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onPrompt);
+      unsubscribe();
+    };
   }, [hydrate]);
 
   if (!installEvent) return null;

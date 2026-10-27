@@ -63,7 +63,8 @@ export function GameBoard({
           const isRemovable = removableTargets.has(cell.id);
           const isProtected = protectedCells.has(cell.id);
 
-          const dimmed = selecting && !isLegal && !isRemovable;
+          const dimmed =
+            selecting && showLegalMoves && !isLegal && !isRemovable;
           const classes = [
             "board-cell",
             isWild ? "is-wild" : "",
@@ -94,6 +95,7 @@ export function GameBoard({
                 cursor: isLegal || isRemovable ? "pointer" : "default",
                 opacity: dimmed ? 0.38 : 1,
               }}
+              // Valid targets stay tappable; the highlight is only guidance.
             >
               {cell.type === "CARD" ? (
                 <CardFace

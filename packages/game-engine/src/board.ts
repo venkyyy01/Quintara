@@ -197,6 +197,13 @@ export function createStandardBoardDefinition(): BoardDefinition {
     if (!improved) break;
   }
 
+  // Direct coordinate → slot index mapping: findIndex would silently alias
+  // every unmapped corner to slot 0's code if the guard above were removed.
+  const slotByCoordinates = new Map<string, number>();
+  positions.forEach((position, index) => {
+    slotByCoordinates.set(`${position.row},${position.column}`, index);
+  });
+
   const cells: BoardCellDefinition[] = [];
   for (let row = 0; row < size; row++) {
     for (let column = 0; column < size; column++) {
@@ -204,9 +211,7 @@ export function createStandardBoardDefinition(): BoardDefinition {
       if (cornerKeys.has(id)) {
         cells.push({ id, row, column, type: "WILD_CORNER" });
       } else {
-        const slot = positions.findIndex(
-          (p) => p.row === row && p.column === column,
-        );
+        const slot = slotByCoordinates.get(`${row},${column}`) as number;
         cells.push({
           id,
           row,

@@ -9,6 +9,7 @@
  */
 
 import { shuffled } from "./rng.js";
+import { EngineError } from "./errors.js";
 import type { DrawReason, DomainEvent } from "./events.js";
 import type { CardId } from "./cards.js";
 import type { GameState, PlayerId } from "./state.js";
@@ -34,7 +35,10 @@ export function drawCards(
 
     const cardId = drawPile[0];
     if (cardId === undefined) {
-      throw new Error("Draw pile empty after reshuffle — card conservation violated");
+      throw new EngineError(
+        "CARD_CONSERVATION_VIOLATED",
+        "Draw pile empty after reshuffle — card conservation violated",
+      );
     }
     const rest = drawPile.slice(1);
     const hand = [...(current.hands[playerId] ?? []), cardId];
@@ -74,7 +78,8 @@ function reshuffleDiscards(state: GameState): {
   }
 
   if (collected.length === 0) {
-    throw new Error(
+    throw new EngineError(
+      "CARD_CONSERVATION_VIOLATED",
       "Cannot reshuffle: no discarded cards and draw pile is empty",
     );
   }

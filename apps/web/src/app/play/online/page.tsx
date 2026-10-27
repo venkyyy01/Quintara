@@ -5,13 +5,16 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { CellId, SequenceSelectionOption } from "@quintara/game-engine";
 import { GameScreen } from "@/components/GameScreen";
 import { ReconnectOverlay } from "@/components/Modals";
-import { useOnlineGame } from "@/lib/online-game";
+import {
+  useOnlineGame,
+  type OnlineGameState,
+} from "@/lib/online-game";
 
 export default function OnlinePage() {
   const online = useOnlineGame();
@@ -24,12 +27,77 @@ export default function OnlinePage() {
 
   useEffect(() => {
     online.connect();
+    // Invite deep links (§30): /play/online?room=CODE joins automatically
+    // once the socket is authenticated.
+    const invitedCode = new URLSearchParams(window.location.search)
+      .get("room")
+      ?.trim()
+      .toUpperCase();
+    if (invitedCode) {
+      pendingInvite.current = invitedCode;
+      // Clean the URL so a refresh doesn't try to join twice.
+      window.history.replaceState(null, "", window.location.pathname);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const pendingInvite = useRef<string | null>(null);
+
+  // Hooks must run on every render — computed before the phase-based returns.
+  const projected = online.projected;
+
+  // Fire the pending invite join as soon as we're connected and idle.
+  const joinRoom = online.joinRoom;
+  const connection = online.connection;
+  const phase = online.phase;
+  const room = online.room;
+  useEffect(() => {
+    if (
+      pendingInvite.current &&
+      connection === "connected" &&
+      phase === "HOME" &&
+      !room
+    ) {
+      const code = pendingInvite.current;
+      pendingInvite.current = null;
+      joinRoom(code);
+    }
+  }, [connection, phase, room, joinRoom]);
+  const legalTargets = useMemo(() => {
+    const set = new Set<CellId>();
+    if (!projected) return set;
+    for (const action of projected.legalActions?.mainActions ?? []) {
+      if (
+        online.selectedCardId
+          ? action.cardId === online.selectedCardId &&
+            action.type !== "PLAY_REMOVE_JACK"
+          : action.type !== "PLAY_REMOVE_JACK"
+      ) {
+        set.add(action.targetCellId);
+      }
+    }
+    return set;
+  }, [projected, online.selectedCardId]);
+
+  const removableTargets = useMemo(() => {
+    const set = new Set<CellId>();
+    if (!projected) return set;
+    if (online.selectedCardId) {
+      for (const action of projected.legalActions?.mainActions ?? []) {
+        if (
+          action.cardId === online.selectedCardId &&
+          action.type === "PLAY_REMOVE_JACK"
+        ) {
+          set.add(action.targetCellId);
+        }
+      }
+    }
+    return set;
+  }, [projected, online.selectedCardId]);
+
   // Playing phase — server-driven game screen.
   if (online.phase === "PLAYING" && online.projected) {
-    const projected = online.projected;
+    const state = online.projected;
     const me = online.identity?.playerId ?? null;
 
     return (
@@ -38,22 +106,22 @@ export default function OnlinePage() {
           <ReconnectOverlay message="Connection lost — Reconnecting…" />
         )}
         <GameScreen
-          projected={projected}
+          projected={state}
           authoritativeState={null}
           viewerId={me}
           selectedCardId={online.selectedCardId}
-          lastPlacedCellId={null}
+          lastPlacedCellId={online.lastPlacedCellId}
           lastMoveSummary={online.lastMoveSummary}
           botThinking={false}
           handoff={{ pending: false, playerName: "", teamName: "", onReady: () => {} }}
           sequenceSelection={
-            projected.turnPhase === "AWAITING_SEQUENCE_SELECTION"
+            state.turnPhase === "AWAITING_SEQUENCE_SELECTION"
               ? {
-                  options: projected.pendingSequenceOptions ?? [],
+                  options: state.pendingSequenceOptions ?? [],
                   onSelect: (option: SequenceSelectionOption) =>
                     online.selectSequences([...option.sequences]),
                   onUseDefault: () => {
-                    const first = projected.pendingSequenceOptions?.[0];
+                    const first = state.pendingSequenceOptions?.[0];
                     if (first) online.selectSequences([...first.sequences]);
                   },
                 }
@@ -66,18 +134,21 @@ export default function OnlinePage() {
           }
           onSelectCard={(cardId) => online.selectCard(cardId)}
           onCellClick={(cellId: CellId) => {
-            const legal = projected.legalActions;
+            const legal = state.legalActions;
             if (!legal) return;
             const match = legal.mainActions.find(
               (a) =>
                 a.targetCellId === cellId &&
-                (!online.selectedCardId || a.cardId === online.selectedCardId),
+                (online.selectedCardId
+                  ? a.cardId === online.selectedCardId
+                  : true),
             );
-            if (!match) return;
+            if (!match || (!legalTargets.has(cellId) && !removableTargets.has(cellId)))
+              return;
             online.sendCommand({
               type: match.type,
               actionId: `web-${Date.now()}`,
-              expectedVersion: projected.version,
+              expectedVersion: state.version,
               cardId: match.cardId,
               targetCellId: match.targetCellId,
             });
@@ -86,11 +157,12 @@ export default function OnlinePage() {
             online.sendCommand({
               type: "EXCHANGE_DEAD_CARD",
               actionId: `web-${Date.now()}`,
-              expectedVersion: projected.version,
+              expectedVersion: state.version,
               cardId,
             });
           }}
           onRematch={() => online.rematch()}
+          hideRematch={true}
           onQuit={() => {
             online.leaveRoom();
             router.push("/");
@@ -315,13 +387,7 @@ export default function OnlinePage() {
             ))}
           </ul>
 
-          <button
-            type="button"
-            className="btn btn-primary mt-6 w-full py-3.5"
-            onClick={online.startGame}
-          >
-            Start Game
-          </button>
+          <StartGameControl online={online} />
           <p className="mt-2 text-center text-xs text-secondary">
             {online.room.players.length} of {online.room.options.playerCount}{" "}
             players ready
@@ -329,5 +395,44 @@ export default function OnlinePage() {
         </section>
       )}
     </main>
+  );
+}
+
+function StartGameControl({ online }: { online: OnlineGameState }) {
+  const isHost =
+    online.identity !== null &&
+    online.room?.players.some(
+      (player) => player.isHost && player.playerId === online.identity?.playerId,
+    ) === true;
+  const full =
+    online.room !== null &&
+    online.room.players.length >= online.room.options.playerCount;
+
+  if (!isHost) {
+    return (
+      <div
+        className="mt-6 w-full rounded-[10px] border border-white/10 bg-white/5 py-3.5 text-center text-sm text-secondary"
+        role="status"
+      >
+        Waiting for the host to start the game…
+      </div>
+    );
+  }
+  return (
+    <>
+      <button
+        type="button"
+        className="btn btn-primary mt-6 w-full py-3.5"
+        disabled={!full}
+        onClick={online.startGame}
+      >
+        {full ? "Start Game" : "Waiting for players…"}
+      </button>
+      {!full && (
+        <p className="mt-1.5 text-center text-xs text-secondary">
+          The room must be full (or filled with bots) before starting.
+        </p>
+      )}
+    </>
   );
 }

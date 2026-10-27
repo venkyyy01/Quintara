@@ -18,11 +18,14 @@ export function VictoryModal({
   viewerId,
   onRematch,
   onQuit,
+  hideRematch = false,
 }: {
   projected: ProjectedState;
   viewerId: string | null;
   onRematch: () => void;
   onQuit: () => void;
+  /** Online rooms: only the host can trigger the rematch (§30). */
+  hideRematch?: boolean;
 }) {
   const winner = projected.teams.find((t) => t.id === projected.winnerTeamId);
   const isDraw = projected.resultType === "STALEMATE";
@@ -93,9 +96,15 @@ export function VictoryModal({
         </div>
 
         <div className="mt-6 flex flex-wrap justify-center gap-2.5">
-          <button type="button" className="btn btn-primary" onClick={onRematch}>
-            Rematch
-          </button>
+          {hideRematch ? (
+            <p className="w-full text-center text-xs text-secondary">
+              Waiting for the host to start the rematch…
+            </p>
+          ) : (
+            <button type="button" className="btn btn-primary" onClick={onRematch}>
+              Rematch
+            </button>
+          )}
           <button type="button" className="btn btn-secondary" onClick={onQuit}>
             Return Home
           </button>

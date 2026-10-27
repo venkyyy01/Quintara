@@ -17,6 +17,7 @@ import type {
 } from "@quintara/shared-types";
 import type { ProjectedState, SequenceCandidate } from "@quintara/game-engine";
 import { engineErrorMessage, type EngineErrorCode } from "@quintara/game-engine";
+import { haptic, sounds } from "./sound";
 
 export type ConnectionStatus =
   | "idle"
@@ -27,7 +28,7 @@ export type ConnectionStatus =
 
 type Phase = "HOME" | "LOBBY" | "PLAYING";
 
-interface OnlineGameState {
+export interface OnlineGameState {
   connection: ConnectionStatus;
   phase: Phase;
   identity: { playerId: string; displayName: string; token: string } | null;
@@ -36,6 +37,8 @@ interface OnlineGameState {
   version: number;
   selectedCardId: string | null;
   lastMoveSummary: string | null;
+  /** Most recent marker placement (§45 drop animation), from projected events. */
+  lastPlacedCellId: string | null;
   errorMessage: string | null;
   matchmaking: boolean;
 
@@ -94,6 +97,7 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
           },
           connection: "connected",
         });
+        pendingToken = message.identity.token;
         try {
           window.localStorage.setItem("quintara-auth", message.identity.token);
         } catch {
@@ -108,13 +112,25 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
         });
         break;
 
-      case "GAME_STATE":
+      case "GAME_STATE": {
+        // Drop a selection the new authoritative state no longer supports.
+        const selected = get().selectedCardId;
+        const stillPlayable =
+          selected !== null &&
+          (message.state.legalActions?.mainActions ?? []).some(
+            (action) => action.cardId === selected,
+          );
         set({
           projected: message.state,
           version: message.state.version,
           phase: "PLAYING",
+          lastPlacedCellId: null,
+          ...(selected !== null && !stillPlayable
+            ? { selectedCardId: null }
+            : {}),
         });
         break;
+      }
 
       case "GAME_EVENTS": {
         const summaries: string[] = [];
@@ -122,12 +138,19 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
           switch (event.type) {
             case "MARKER_PLACED":
               summaries.push("Marker placed");
+              sounds.place();
+              haptic("light");
+              set({ lastPlacedCellId: event.cellId });
               break;
             case "MARKER_REMOVED":
               summaries.push("Marker removed");
+              sounds.remove();
+              haptic("light");
               break;
             case "SEQUENCE_COMPLETED":
               summaries.push("Line completed!");
+              sounds.sequence();
+              haptic("medium");
               break;
             case "DEAD_CARD_EXCHANGED":
               summaries.push("Dead card exchanged");
@@ -137,6 +160,8 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
               break;
             case "GAME_WON":
               summaries.push("Game over!");
+              sounds.victory();
+              haptic("medium");
               break;
           }
         }
@@ -227,6 +252,7 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
     version: 0,
     selectedCardId: null,
     lastMoveSummary: null,
+    lastPlacedCellId: null,
     errorMessage: null,
     matchmaking: false,
 
@@ -267,6 +293,9 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
     },
 
     cancelQuickMatch: () => {
+      // Only meaningful while actually queued; leaving an already-matched
+      // room is leaveRoom's job, not a matchmaking cancellation.
+      if (!get().matchmaking) return;
       send({ type: "LEAVE_ROOM", requestId: request() });
       set({ matchmaking: false });
     },

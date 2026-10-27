@@ -48,7 +48,10 @@ export function createRngState(seed: string): RngState {
 
 /** Advances the stream one step, returning the new state and a uint32 value. */
 export function rngNext(state: RngState): { state: RngState; value: number } {
-  // xorshift128
+  // xorshift128: each word shifts down one position (s0←s1←s2←s3) and the new
+  // s3 mixes the oldest word's feedback with the freshly-computed tap t0 —
+  // this keeps all four words rotating through the generator. See Marsaglia,
+  // "Xorshift RNGs" (2003), the 128-bit variant.
   const t0 = (state.s0 ^ (state.s0 << 11)) >>> 0;
   const s0 = state.s1;
   const s1 = state.s2;

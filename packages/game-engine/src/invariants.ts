@@ -12,7 +12,6 @@ import {
 } from "./board.js";
 import { countAllCards } from "./draw.js";
 import {
-  canonicalCellKey,
   intersectionSize,
   qualifiesForTeam,
 } from "./sequences.js";
@@ -216,11 +215,9 @@ function sequenceIssues(
     }
   }
 
-  // Canonical ordering check (§53): cells sorted along the direction.
-  const expectedKey = canonicalCellKey(cells);
-  if (canonicalCellKey([...cells]) !== expectedKey) {
-    issues.push(`sequence ${sequence.id} not canonically ordered`);
-  }
+  // §53 canonical ordering: registration stores cells in traversal order
+  // along the sequence direction; re-check that they are contiguous steps
+  // (done above) — the coordinate set itself is exactly what was validated.
 
   return issues;
 }

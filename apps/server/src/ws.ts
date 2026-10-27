@@ -69,6 +69,16 @@ export async function registerWebSocket(
       try {
         switch (message.type) {
           case "AUTH": {
+            if (connection) {
+              // Identity is bound once per socket: a second AUTH frame must
+              // never re-bind the seat mid-connection (§139).
+              safeSend(socket, {
+                type: "ERROR",
+                code: "BAD_MESSAGE",
+                message: "Already authenticated.",
+              });
+              break;
+            }
             const identity = authenticate(message.token, message.displayName);
             connection = { socket, identity };
             let set = connections.get(identity.playerId);
@@ -219,11 +229,15 @@ export async function registerWebSocket(
             const identity = requireIdentity(connection, socket);
             if (!identity) return;
             const room = sessions.getRoomForPlayer(identity.playerId);
-            if (room) sessions.rematch(room.id, identity.playerId);
+            const result = room
+              ? sessions.rematch(room.id, identity.playerId)
+              : { error: "You are not in a room." };
             safeSend(socket, {
               type: "ACTION_RESULT",
               requestId: message.requestId,
-              ok: true,
+              ok: result.ok === true,
+              errorMessage:
+                result.ok === true ? undefined : result.error,
             });
             break;
           }

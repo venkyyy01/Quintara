@@ -11,8 +11,10 @@ import {
   applyCommand,
   createGame,
   currentPlayerId,
+  detectCandidateSequences,
   engineErrorMessage,
   EngineError,
+  findMaximumCompatibleSets,
   generateSecureSeed,
   getPlayer,
   getLegalActions,
@@ -20,9 +22,12 @@ import {
   projectStateForViewer,
   resolveSequenceSelectionDefault,
   startGame,
+  type CellId,
   type DomainEvent,
   type GameCommand,
   type GameState,
+  type MainAction,
+  type TeamId,
 } from "@quintara/game-engine";
 import {
   chooseBotAction,
@@ -96,6 +101,10 @@ export class SessionManager {
   private readonly roomsByCode = new Map<string, Room>();
   private readonly roomByPlayer = new Map<string, string>();
   private readonly quickQueue: { playerId: string; displayName: string }[] = [];
+  private readonly disconnectTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
   private sink: SessionSink = { send: () => {}, broadcastRoom: () => {} };
 
   constructor(private readonly store: GameStore = new InMemoryGameStore()) {}
@@ -114,10 +123,41 @@ export class SessionManager {
     mode: GameMode,
     partial: Partial<RoomOptions>,
   ): RoomState {
-    const options: RoomOptions = { ...DEFAULT_OPTIONS, ...partial };
+    // Normalise client-supplied options: a missing/invalid playerCount would
+    // otherwise make createGame throw mid-startGame with a confusing error.
+    const requestedCount = Number(partial.playerCount);
+    const playerCount =
+      Number.isInteger(requestedCount) && requestedCount >= 2
+        ? requestedCount
+        : DEFAULT_OPTIONS.playerCount;
+
+    // AI seats can never crowd out the host: at least one seat stays human.
+    const requestedAiSeats = Number(partial.aiSeats ?? DEFAULT_OPTIONS.aiSeats);
+    const aiSeats =
+      Number.isInteger(requestedAiSeats) && requestedAiSeats > 0
+        ? Math.min(playerCount - 1, requestedAiSeats)
+        : 0;
+
+    // A team configuration that does not match the seat count would make
+    // createGame reject the game later; fall back to the default layout.
+    const requestedTeamSizes = partial.teamSizes ?? DEFAULT_OPTIONS.teamSizes;
+    const teamSizes =
+      requestedTeamSizes.length > 0 &&
+      requestedTeamSizes.reduce((a, b) => a + b, 0) === playerCount
+        ? [...requestedTeamSizes]
+        : [];
+
+    const options: RoomOptions = {
+      ...DEFAULT_OPTIONS,
+      ...partial,
+      playerCount,
+      aiSeats,
+      teamSizes,
+    };
+
     const room: Room = {
       id: `room-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
-      code: generateRoomCode(),
+      code: this.unusedRoomCode(),
       mode,
       options,
       hostPlayerId,
@@ -139,7 +179,6 @@ export class SessionManager {
       createdAt: Date.now(),
     };
 
-    // AI seats fill the room so solo/quick games can start immediately.
     for (let i = 0; i < options.aiSeats; i++) {
       room.players.push({
         playerId: `ai-${room.code}-${i + 1}`,
@@ -213,12 +252,19 @@ export class SessionManager {
   }
 
   leaveRoom(playerId: string): void {
+    // Leaving also cancels a pending quick-match request (§58).
+    this.cancelQuickMatch(playerId);
     const roomId = this.roomByPlayer.get(playerId);
     if (!roomId) return;
     const room = this.rooms.get(roomId);
     if (!room) return;
 
     room.spectators.delete(playerId);
+    const pendingDisconnect = this.disconnectTimers.get(playerId);
+    if (pendingDisconnect) {
+      clearTimeout(pendingDisconnect);
+      this.disconnectTimers.delete(playerId);
+    }
     const player = room.players.find((p) => p.playerId === playerId);
     if (player && !player.isAi) {
       if (room.status === "LOBBY") {
@@ -237,6 +283,7 @@ export class SessionManager {
     }
     this.roomByPlayer.delete(playerId);
     this.broadcastRoomState(room);
+    this.sweepIfEmpty(room);
   }
 
   setConnection(playerId: string, connected: boolean): void {
@@ -245,8 +292,71 @@ export class SessionManager {
     if (!room) return;
     const player = room.players.find((p) => p.playerId === playerId);
     if (!player) return;
-    player.connection = connected ? "CONNECTED" : "RECONNECTING";
+
+    if (connected) {
+      const timer = this.disconnectTimers.get(playerId);
+      if (timer) {
+        clearTimeout(timer);
+        this.disconnectTimers.delete(playerId);
+      }
+      player.connection = "CONNECTED";
+    } else {
+      player.connection = "RECONNECTING";
+      const existing = this.disconnectTimers.get(playerId);
+      if (existing) clearTimeout(existing);
+      this.disconnectTimers.set(
+        playerId,
+        setTimeout(() => {
+          this.disconnectTimers.delete(playerId);
+          const current = room.players.find((p) => p.playerId === playerId);
+          if (current && current.connection === "RECONNECTING") {
+            current.connection = "DISCONNECTED";
+            this.broadcastRoomState(room);
+            this.sweepIfEmpty(room);
+          }
+        }, RECONNECT_GRACE_MS),
+      );
+    }
     this.broadcastRoomState(room);
+  }
+
+  /**
+   * Disposes a room once no human can ever use it again (all humans
+   * disconnected and no spectators watching). Without this, abandoned rooms
+   * and their timers accumulate forever.
+   */
+  /** Invite codes key roomsByCode, so never reuse a code that is live. */
+  private unusedRoomCode(): string {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const code = drawRoomCode();
+      if (!this.roomsByCode.has(code)) return code;
+    }
+    return `Q${Date.now().toString(36).toUpperCase().slice(-5)}`;
+  }
+
+  private sweepIfEmpty(room: Room): void {
+    const anyConnected = room.players.some(
+      (p) => !p.isAi && p.connection === "CONNECTED",
+    );
+    if (anyConnected || room.spectators.size > 0) return;
+    this.disposeRoom(room);
+  }
+
+  private disposeRoom(room: Room): void {
+    if (room.botTimer) clearTimeout(room.botTimer);
+    if (room.turnTimer) clearTimeout(room.turnTimer);
+    for (const player of room.players) {
+      if (this.roomByPlayer.get(player.playerId) === room.id) {
+        this.roomByPlayer.delete(player.playerId);
+      }
+    }
+    for (const spectator of room.spectators) {
+      if (this.roomByPlayer.get(spectator) === room.id) {
+        this.roomByPlayer.delete(spectator);
+      }
+    }
+    this.rooms.delete(room.id);
+    this.roomsByCode.delete(room.code);
   }
 
   // -------------------------------------------------------------------------
@@ -311,8 +421,25 @@ export class SessionManager {
       return { error: "Only the host can start the game." };
     }
     if (room.status === "ACTIVE") return { error: "Game already started." };
-    if (room.players.length < 2 && room.options.aiSeats === 0) {
-      return { error: "At least two players are required." };
+
+    // The dealing configuration is derived from the seat count, so the room
+    // must be exactly full (humans + AI seats) before the host may start.
+    if (room.status === "LOBBY") {
+      const teamSizesProvided = room.options.teamSizes.length > 0;
+      const target = teamSizesProvided
+        ? room.options.teamSizes.reduce((a, b) => a + b, 0)
+        : room.options.playerCount;
+      if (room.players.length < target) {
+        return {
+          error: `Waiting for players — ${target - room.players.length} more seat(s) needed.`,
+        };
+      }
+      if (room.players.length > target) {
+        return { error: "Too many players for this configuration." };
+      }
+      if (!room.players.some((p) => !p.isAi)) {
+        return { error: "At least one human player is required." };
+      }
     }
 
     const created = createGame({
@@ -375,7 +502,11 @@ export class SessionManager {
     }
 
     // Idempotency (§79): a retried action returns the original outcome.
-    const processed = game.processedActions.get(command.actionId);
+    // Keyed by (playerId, actionId): clients routinely reuse short actionIds
+    // ("a1") across seats and turns, and a bare actionId would replay one
+    // player's move as another's.
+    const actionKey = `${playerId}:${command.actionId}`;
+    const processed = game.processedActions.get(actionKey);
     if (processed) {
       return { ok: true, version: processed.versionAfter, duplicate: true };
     }
@@ -391,8 +522,8 @@ export class SessionManager {
       game.currentState = result.state;
       game.commands.push(authoritative);
       game.events.push(...(result.events as DomainEvent[]));
-      game.processedActions.set(command.actionId, {
-        actionId: command.actionId,
+      game.processedActions.set(actionKey, {
+        actionId: actionKey,
         playerId,
         requestId,
         versionAfter: result.state.version,
@@ -442,14 +573,20 @@ export class SessionManager {
     this.sink.send(playerId, { type: "ROOM_STATE", room: this.roomState(room) });
   }
 
-  rematch(roomId: string, playerId: string): void {
+  rematch(
+    roomId: string,
+    playerId: string,
+  ): { ok?: boolean; error?: string } {
     const room = this.rooms.get(roomId);
-    if (!room || room.status !== "FINISHED") return;
-    if (room.hostPlayerId !== playerId) return;
+    if (!room || room.status !== "FINISHED") return {};
+    if (room.hostPlayerId !== playerId) {
+      return { error: "Only the host can start the rematch." };
+    }
     room.status = "LOBBY";
     room.game = null;
     this.broadcastRoomState(room);
-    this.startGame(roomId, room.hostPlayerId);
+    const started = this.startGame(roomId, room.hostPlayerId);
+    return started.error ? { error: started.error } : { ok: true };
   }
 
   // -------------------------------------------------------------------------
@@ -552,8 +689,7 @@ export class SessionManager {
         const legal = getLegalActions(state, activeId);
         const main = legal.mainActions;
         if (main.length === 0) return; // safeguard will skip
-        // Deterministic fallback: first legal action (policy v1).
-        const chosen = main[0]!;
+        const chosen = pickTimeoutAction(state, activeId, main);
         command = {
           type: chosen.type,
           actionId: `timeout-${Date.now()}`,
@@ -687,9 +823,51 @@ export class SessionManager {
   }
 }
 
+/**
+ * §94–§95 timeout auto-action policy (v1): 1. an immediately-winning
+ * placement, 2. a placement blocking an immediate opponent victory,
+ * 3. the first deterministic legal action. Uses public board state only —
+ * never hidden hands.
+ */
+export function pickTimeoutAction(
+  state: GameState,
+  playerId: string,
+  main: readonly MainAction[],
+): MainAction {
+  const myTeam = getPlayer(state, playerId).teamId;
+  const needs =
+    state.requiredSequences -
+    (state.completedSequences[myTeam]?.length ?? 0);
+
+  const threatFor = (teamId: TeamId, cellId: string): number =>
+    findMaximumCompatibleSets(
+      detectCandidateSequences(state, teamId, cellId as CellId),
+      state.completedSequences[teamId] ?? [],
+    )[0]?.length ?? 0;
+
+  const placements = main.filter((a) => a.type !== "PLAY_REMOVE_JACK");
+  const winning = placements.find(
+    (a) => needs <= 0 || threatFor(myTeam, a.targetCellId) >= needs,
+  );
+  if (winning) return winning as MainAction;
+
+  for (const team of state.teams) {
+    if (team.id === myTeam) continue;
+    const oppNeeds =
+      state.requiredSequences -
+      (state.completedSequences[team.id]?.length ?? 0);
+    if (oppNeeds <= 0) continue;
+    const blocker = placements.find(
+      (a) => threatFor(team.id, a.targetCellId) >= oppNeeds,
+    );
+    if (blocker) return blocker as MainAction;
+  }
+  return main[0] as MainAction;
+}
+
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-function generateRoomCode(): string {
+function drawRoomCode(): string {
   let code = "";
   for (let i = 0; i < 6; i++) {
     code += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];

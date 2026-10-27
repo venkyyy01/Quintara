@@ -92,11 +92,18 @@ export async function buildServer(): Promise<FastifyInstance> {
     async (request, reply) => {
       const game = await sessions.getReplay(request.params.gameId);
       if (!game) return reply.code(404).send({ error: "Game not found." });
+      // Public audit payload: replaying the recorded command stream only
+      // requires the seat ids players were assigned; never broadcast
+      // credentials, per-player identity or tokens here.
       return {
         gameId: game.gameId,
         rulesVersion: game.currentState.rulesVersion,
-        initialSeed: game.currentState.rngVersion,
-        commands: game.commands,
+        rngAlgorithmVersion: game.currentState.rngVersion,
+        seatPlayerIds: game.currentState.players.map((p) => p.id),
+        commands: game.commands.map((command) => ({
+          ...command,
+          playerId: "*",
+        })),
         events: game.events.map((event) => ({ type: event.type })),
         summary: game.summary,
       };
