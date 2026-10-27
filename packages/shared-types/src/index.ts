@@ -13,6 +13,14 @@ import type {
   GameState,
 } from "@quintara/game-engine";
 
+/** Distributive omit that preserves union discrimination. */
+export type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
+  ? Omit<T, K>
+  : never;
+
+/** A command as sent by clients: identity is bound server-side (§139). */
+export type ClientGameCommand = DistributiveOmit<GameCommand, "playerId">;
+
 // ---------------------------------------------------------------------------
 // Identity & rooms
 // ---------------------------------------------------------------------------
@@ -107,7 +115,7 @@ export type ClientMessage =
       readonly type: "GAME_COMMAND";
       readonly requestId: string;
       readonly roomActionId: string;
-      readonly command: Omit<GameCommand, "playerId">;
+      readonly command: ClientGameCommand;
     }
   | {
       readonly type: "RESYNC";
@@ -193,7 +201,7 @@ export interface GameSummary {
 export interface GameReplay {
   readonly initialSeed: string;
   readonly rulesVersion: string;
-  readonly commands: readonly (Omit<GameCommand, "playerId"> & {
+  readonly commands: readonly (ClientGameCommand & {
     readonly playerId: string;
   })[];
   readonly events: readonly (GameState | never)[] | null;
