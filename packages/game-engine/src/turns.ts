@@ -11,7 +11,7 @@ import {
   type GameState,
   type PlayerId,
 } from "./state.js";
-import { finishGameStalemate } from "./victory.js";
+import { finishGameStalemate, wallClock, type Clock } from "./victory.js";
 
 /** Marks a board mutation: resets the stalemate skip counter (§167). */
 export function withBoardChange(state: GameState): GameState {
@@ -22,7 +22,10 @@ export function withBoardChange(state: GameState): GameState {
  * Ends the current player's turn (TURN_COMPLETED), advances to the next
  * player (TURN_STARTED) and enforces the no-legal-action safeguard loop.
  */
-export function completeTurnAndAdvance(state: GameState): {
+export function completeTurnAndAdvance(
+  state: GameState,
+  now: Clock = wallClock,
+): {
   state: GameState;
   events: DomainEvent[];
 } {
@@ -37,7 +40,7 @@ export function completeTurnAndAdvance(state: GameState): {
   }
   const current = advanceToNextPlayer(state);
   events.push(...turnStartedEvents(current));
-  return enforceNoLegalActionSafeguard(current, events);
+  return enforceNoLegalActionSafeguard(current, events, now);
 }
 
 /**
@@ -50,6 +53,7 @@ export function completeTurnAndAdvance(state: GameState): {
 export function enforceNoLegalActionSafeguard(
   state: GameState,
   priorEvents: DomainEvent[] = [],
+  now: Clock = wallClock,
 ): { state: GameState; events: DomainEvent[] } {
   const events = [...priorEvents];
   let current = state;
@@ -79,7 +83,7 @@ export function enforceNoLegalActionSafeguard(
     current = { ...current, consecutiveNoActionSkips: skips };
 
     if (skips >= current.turnOrder.length) {
-      const result = finishGameStalemate(current);
+      const result = finishGameStalemate(current, now);
       return { state: result.state, events: [...events, ...result.events] };
     }
 
@@ -94,11 +98,14 @@ export function enforceNoLegalActionSafeguard(
  * Emits TURN_STARTED for the current player and runs the turn-start
  * safeguard. Used by startGame for the first turn and after main actions.
  */
-export function startTurnsWithSafeguard(state: GameState): {
+export function startTurnsWithSafeguard(
+  state: GameState,
+  now: Clock = wallClock,
+): {
   state: GameState;
   events: DomainEvent[];
 } {
-  return enforceNoLegalActionSafeguard(state, turnStartedEvents(state));
+  return enforceNoLegalActionSafeguard(state, turnStartedEvents(state), now);
 }
 
 function advanceToNextPlayer(state: GameState): GameState {

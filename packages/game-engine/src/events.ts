@@ -104,10 +104,14 @@ export type DomainEvent =
       readonly winningPlayerId: PlayerId;
       readonly winningActionId: ActionId;
       readonly totalTurns: number;
+      /** Recorded finish stamp (§102) so replays/auditors can pin the exact value. */
+      readonly finishedAt: string;
     }
   | {
       readonly type: "GAME_STALEMATED";
       readonly totalTurns: number;
+      /** Recorded finish stamp (§102) so replays/auditors can pin the exact value. */
+      readonly finishedAt: string;
     }
   | {
       readonly type: "GAME_DRAWN";

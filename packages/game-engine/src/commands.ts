@@ -45,7 +45,12 @@ import {
   enforceNoLegalActionSafeguard,
   withBoardChange,
 } from "./turns.js";
-import { checkVictory, finishGameWithWinner } from "./victory.js";
+import {
+  checkVictory,
+  finishGameWithWinner,
+  wallClock,
+  type Clock,
+} from "./victory.js";
 
 // ---------------------------------------------------------------------------
 // Command model (§81)
@@ -102,9 +107,19 @@ export type { EngineResult };
 // applyCommand
 // ---------------------------------------------------------------------------
 
+/**
+ * Optional per-command context. `now` injects a deterministic clock so that
+ * replaying a recorded command stream reproduces the state byte-for-byte
+ * (§102); live play defaults to the wall clock.
+ */
+export interface CommandOptions {
+  readonly now?: Clock;
+}
+
 export function applyCommand(
   state: GameState,
   command: GameCommand,
+  options?: CommandOptions,
 ): EngineResult {
   // §80: optimistic concurrency precondition.
   if (
@@ -121,13 +136,13 @@ export function applyCommand(
     case "EXCHANGE_DEAD_CARD":
       return exchangeDeadCard(state, command);
     case "PLAY_NORMAL_CARD":
-      return playNormalCard(state, command);
+      return playNormalCard(state, command, options);
     case "PLAY_WILD_JACK":
-      return playWildJack(state, command);
+      return playWildJack(state, command, options);
     case "PLAY_REMOVE_JACK":
-      return playRemoveJack(state, command);
+      return playRemoveJack(state, command, options);
     case "SELECT_SEQUENCE_SET":
-      return selectSequenceSet(state, command);
+      return selectSequenceSet(state, command, options);
     default: {
       const exhaustive: never = command;
       throw new EngineError(
@@ -255,6 +270,7 @@ function exchangeDeadCard(
 function playNormalCard(
   state: GameState,
   command: PlayNormalCardCommand,
+  options?: CommandOptions,
 ): EngineResult {
   assertActiveTurn(state, command.playerId, "AWAITING_MAIN_ACTION");
   assertOwnsCard(state, command.playerId, command.cardId);
@@ -296,7 +312,13 @@ function playNormalCard(
     cellId: command.targetCellId,
   });
 
-  return resolvePlacementTurn(current, command, command.targetCellId, preEvents);
+  return resolvePlacementTurn(
+    current,
+    command,
+    command.targetCellId,
+    preEvents,
+    options,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +328,7 @@ function playNormalCard(
 function playWildJack(
   state: GameState,
   command: PlayWildJackCommand,
+  options?: CommandOptions,
 ): EngineResult {
   assertActiveTurn(state, command.playerId, "AWAITING_MAIN_ACTION");
   assertOwnsCard(state, command.playerId, command.cardId);
@@ -339,7 +362,13 @@ function playWildJack(
     cellId: command.targetCellId,
   });
 
-  return resolvePlacementTurn(current, command, command.targetCellId, preEvents);
+  return resolvePlacementTurn(
+    current,
+    command,
+    command.targetCellId,
+    preEvents,
+    options,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -349,6 +378,7 @@ function playWildJack(
 function playRemoveJack(
   state: GameState,
   command: PlayRemoveJackCommand,
+  options?: CommandOptions,
 ): EngineResult {
   assertActiveTurn(state, command.playerId, "AWAITING_MAIN_ACTION");
   assertOwnsCard(state, command.playerId, command.cardId);
@@ -413,7 +443,7 @@ function playRemoveJack(
   current = drawn.state;
   events.push(...drawn.events);
 
-  const advanced = completeTurnAndAdvance(current);
+  const advanced = completeTurnAndAdvance(current, options?.now ?? wallClock);
   return {
     state: withVersion(advanced.state, state.version),
     events: [...events, ...advanced.events],
@@ -427,11 +457,12 @@ function playRemoveJack(
 function selectSequenceSet(
   state: GameState,
   command: SelectSequenceSetCommand,
+  options?: CommandOptions,
 ): EngineResult {
   assertActiveTurn(state, command.playerId, "AWAITING_SEQUENCE_SELECTION");
 
-  const options = state.pendingSequenceOptions ?? [];
-  if (options.length === 0) {
+  const pendingOptions = state.pendingSequenceOptions ?? [];
+  if (pendingOptions.length === 0) {
     throw new EngineError("INVALID_PHASE", "No sequence selection pending");
   }
 
@@ -442,7 +473,7 @@ function selectSequenceSet(
     .sort()
     .join("||");
 
-  const matched = options.find(
+  const matched = pendingOptions.find(
     (option) =>
       [...option.sequences]
         .map((s) => canonicalCellKey(s.cells))
@@ -455,7 +486,13 @@ function selectSequenceSet(
     });
   }
 
-  return registerSelectionAndFinishTurn(state, command, matched.sequences);
+  return registerSelectionAndFinishTurn(
+    state,
+    command,
+    matched.sequences,
+    [],
+    options,
+  );
 }
 
 /**
@@ -478,6 +515,7 @@ function resolvePlacementTurn(
   command: PlayNormalCardCommand | PlayWildJackCommand,
   placedCellId: CellId,
   preEvents: DomainEvent[],
+  options?: CommandOptions,
 ): EngineResult {
   const playerId = command.playerId;
   const teamId = getPlayer(state, playerId).teamId;
@@ -490,7 +528,7 @@ function resolvePlacementTurn(
     maxSets.length > 0 && (maxSets[0]?.length ?? 0) > 0;
 
   if (!hasSequences) {
-    return finishTurn(state, command.actionId, preEvents);
+    return finishTurn(state, command.actionId, preEvents, undefined, options);
   }
 
   if (maxSets.length === 1) {
@@ -500,15 +538,16 @@ function resolvePlacementTurn(
       command,
       chosen,
       preEvents,
+      options,
     );
   }
 
   // §63–§66: ambiguous maximum → the acting player selects (§66).
-  const options = toSelectionOptions(maxSets);
+  const selectionOptions = toSelectionOptions(maxSets);
   const next: GameState = {
     ...state,
     turnPhase: "AWAITING_SEQUENCE_SELECTION",
-    pendingSequenceOptions: options,
+    pendingSequenceOptions: selectionOptions,
     version: state.version + 1,
   };
   return {
@@ -519,7 +558,7 @@ function resolvePlacementTurn(
         type: "SEQUENCE_SELECTION_REQUIRED",
         playerId,
         teamId,
-        optionCount: options.length,
+        optionCount: selectionOptions.length,
       },
     ],
   };
@@ -530,6 +569,7 @@ function registerSelectionAndFinishTurn(
   command: GameCommand,
   sequences: readonly SequenceCandidate[],
   preEvents: DomainEvent[] = [],
+  options?: CommandOptions,
 ): EngineResult {
   const playerId = command.playerId;
   const registered = registerSequences(
@@ -548,6 +588,7 @@ function registerSelectionAndFinishTurn(
       teamId,
       playerId,
       command.actionId,
+      options?.now,
     );
     return {
       state: withVersion(result.state, state.version),
@@ -555,7 +596,7 @@ function registerSelectionAndFinishTurn(
     };
   }
 
-  return finishTurn(current, command.actionId, events, state.version);
+  return finishTurn(current, command.actionId, events, state.version, options);
 }
 
 /**
@@ -570,6 +611,7 @@ function finishTurn(
   _actionId: ActionId,
   priorEvents: DomainEvent[],
   originalVersion?: number,
+  options?: CommandOptions,
 ): EngineResult {
   const playerId = currentPlayerId(state);
   if (playerId === null) {
@@ -583,7 +625,7 @@ function finishTurn(
   current = drawn.state;
   events.push(...drawn.events);
 
-  const advanced = completeTurnAndAdvance(current);
+  const advanced = completeTurnAndAdvance(current, options?.now);
   return {
     state: withVersion(
       advanced.state,

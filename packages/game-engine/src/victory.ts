@@ -14,6 +14,15 @@ import {
   type TeamId,
 } from "./state.js";
 
+/**
+ * Injectable clock (§102): finish timestamps are host metadata, never a
+ * hidden input to gameplay. Live play uses the wall clock; deterministic
+ * replays/tests inject a fixed stream so state reproduction is byte-exact.
+ */
+export type Clock = () => string;
+
+export const wallClock: Clock = () => new Date().toISOString();
+
 export function checkVictory(
   state: GameState,
   teamId: TeamId,
@@ -26,14 +35,16 @@ export function finishGameWithWinner(
   teamId: TeamId,
   winningPlayerId: PlayerId,
   winningActionId: ActionId,
+  now: Clock = wallClock,
 ): { state: GameState; events: DomainEvent[] } {
+  const finishedAt = now();
   const finished: GameState = {
     ...state,
     status: "FINISHED",
     resultType: "WIN",
     turnPhase: "GAME_OVER",
     winnerTeamId: teamId,
-    finishedAt: new Date().toISOString(),
+    finishedAt,
     pendingSequenceOptions: null,
   };
   return {
@@ -45,6 +56,7 @@ export function finishGameWithWinner(
         winningPlayerId,
         winningActionId,
         totalTurns: state.turnNumber,
+        finishedAt,
       },
     ],
   };
@@ -56,18 +68,22 @@ export function finishGameWithWinner(
  */
 export function finishGameStalemate(
   state: GameState,
+  now: Clock = wallClock,
 ): { state: GameState; events: DomainEvent[] } {
+  const finishedAt = now();
   const finished: GameState = {
     ...state,
     status: "FINISHED",
     resultType: "STALEMATE",
     turnPhase: "GAME_OVER",
     winnerTeamId: null,
-    finishedAt: new Date().toISOString(),
+    finishedAt,
     pendingSequenceOptions: null,
   };
   return {
     state: finished,
-    events: [{ type: "GAME_STALEMATED", totalTurns: state.turnNumber }],
+    events: [
+      { type: "GAME_STALEMATED", totalTurns: state.turnNumber, finishedAt },
+    ],
   };
 }

@@ -29,6 +29,7 @@ export {
 export {
   applyCommand,
   resolveSequenceSelectionDefault,
+  type CommandOptions,
   type GameCommand,
   type CommandBase,
   type ExchangeDeadCardCommand,
@@ -88,7 +89,7 @@ export {
   toSelectionOptions,
   defaultSequenceOption,
 } from "./overlap.js";
-export { checkVictory } from "./victory.js";
+export { checkVictory, wallClock, type Clock } from "./victory.js";
 export { drawCards, discardCard, countAllCards } from "./draw.js";
 export {
   completeTurnAndAdvance,
@@ -198,7 +199,12 @@ export { scenario, ScenarioBuilder, type ScenarioOptions } from "./scenario.js";
 // Replay (§102)
 // ---------------------------------------------------------------------------
 
-import { applyCommand, type GameCommand, type EngineResult } from "./commands.js";
+import {
+  applyCommand,
+  type CommandOptions,
+  type GameCommand,
+  type EngineResult,
+} from "./commands.js";
 import type { DomainEvent } from "./events.js";
 import type { GameState } from "./state.js";
 
@@ -210,11 +216,12 @@ import type { GameState } from "./state.js";
 export function replayCommands(
   initialState: GameState,
   commands: readonly GameCommand[],
+  options?: CommandOptions,
 ): EngineResult {
   let state = initialState;
   const events: DomainEvent[] = [];
   for (const command of commands) {
-    const result = applyCommand(state, command);
+    const result = applyCommand(state, command, options);
     state = result.state;
     events.push(...result.events);
   }

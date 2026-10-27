@@ -11,7 +11,8 @@ pass-and-play, or online in private rooms and quick matches.
 
 - **Deterministic rules engine** — pure TypeScript, zero UI/database/network
   code, with a comprehensive rule test suite (board, deck, Jacks, dead cards,
-  sequence overlap, protection, victory, reshuffles, property tests).
+  sequence overlap, protection, victory, reshuffles, property tests) and
+  byte-exact replay of recorded command streams (`replayCommands`, §102).
 - **Four AI difficulties** (Easy / Medium / Hard / Expert) that never inspect
   hidden opponent hands.
 - **Local pass-and-play** with handoff privacy screens, and **solo vs AI** —

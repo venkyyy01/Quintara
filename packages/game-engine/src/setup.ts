@@ -23,6 +23,7 @@ import {
 } from "./rng.js";
 import type { EngineResult } from "./events.js";
 import { startTurnsWithSafeguard } from "./turns.js";
+import { wallClock, type Clock } from "./victory.js";
 import {
   RULES_VERSION,
   type GameRulesConfig,
@@ -374,7 +375,10 @@ function buildEmptyOccupancy(
  * Emits GAME_STARTED + TURN_STARTED (with the turn-start no-legal-action
  * safeguard, §75) via the standard event model.
  */
-export function startGame(state: GameState): EngineResult {
+export function startGame(
+  state: GameState,
+  now: Clock = wallClock,
+): EngineResult {
   if (state.status !== "LOBBY") {
     throw new EngineError("GAME_ALREADY_STARTED");
   }
@@ -421,7 +425,7 @@ export function startGame(state: GameState): EngineResult {
     rng,
   };
 
-  const firstTurn = startTurnsWithSafeguard(started);
+  const firstTurn = startTurnsWithSafeguard(started, now);
   return {
     state: firstTurn.state,
     events: [

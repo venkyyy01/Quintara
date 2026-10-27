@@ -9,10 +9,13 @@ import {
   countAllCards,
   createRngState,
   getLegalActions,
+  replayCommands,
   resolveSequenceSelectionDefault,
   rngNextInt,
   scenario,
   validateGameState,
+  type Clock,
+  type DomainEvent,
   type GameCommand,
   type GameState,
   type RngState,
@@ -23,10 +26,38 @@ function pick<T>(rng: RngState, items: readonly T[]): { rng: RngState; item: T }
   return { rng: step.state, item: items[step.value] as T };
 }
 
-/** Plays random legal commands until the game ends or the cap is hit. */
-function randomPlayout(seed: string, maxCommands = 300): GameState {
+/**
+ * Deterministic monotonic clock: the same call sequence always yields the
+ * same stamps, so terminal transitions are reproducible in tests/replays.
+ */
+function testClock(): Clock {
+  let tick = 0;
+  return () => new Date(Date.UTC(2026, 0, 1) + tick++ * 250).toISOString();
+}
+
+interface Playout {
+  initialState: GameState;
+  commands: GameCommand[];
+  events: DomainEvent[];
+  state: GameState;
+}
+
+/**
+ * Plays random legal commands until the game ends or the cap is hit,
+ * recording the initial state and the complete command/event stream so the
+ * whole game can be replayed deterministically (§102).
+ */
+function recordedPlayout(
+  seed: string,
+  maxCommands = 300,
+  now?: Clock,
+): Playout {
   let rng: RngState = createRngState(seed);
-  let state = scenario({ seed }).build();
+  const initialState = scenario({ seed }).build();
+  let state = initialState;
+  const commands: GameCommand[] = [];
+  const events: DomainEvent[] = [];
+  const commandOptions = now ? { now } : undefined;
   let actionCounter = 0;
 
   for (let i = 0; i < maxCommands && state.status === "ACTIVE"; i++) {
@@ -40,12 +71,15 @@ function randomPlayout(seed: string, maxCommands = 300): GameState {
         actionId: `a${actionCounter++}`,
         sequenceCellSets: sequences.map((s) => [...s.cells]),
       };
-      state = applyCommand(state, command).state;
+      commands.push(command);
+      const result = applyCommand(state, command, commandOptions);
+      state = result.state;
+      events.push(...result.events);
       continue;
     }
 
     const legal = getLegalActions(state, playerId);
-    const options: GameCommand[] = [
+    const candidates: GameCommand[] = [
       ...legal.deadExchanges.map(
         (a): GameCommand => ({
           type: "EXCHANGE_DEAD_CARD",
@@ -84,17 +118,25 @@ function randomPlayout(seed: string, maxCommands = 300): GameState {
       }),
     ];
 
-    if (options.length === 0) {
+    if (candidates.length === 0) {
       // The engine's safeguard should have skipped already; treat as stuck.
       throw new Error("No legal options but game is active");
     }
 
-    const chosen = pick(rng, options);
+    const chosen = pick(rng, candidates);
     rng = chosen.rng;
-    state = applyCommand(state, chosen.item).state;
+    commands.push(chosen.item);
+    const result = applyCommand(state, chosen.item, commandOptions);
+    state = result.state;
+    events.push(...result.events);
   }
 
-  return state;
+  return { initialState, commands, events, state };
+}
+
+/** Plays random legal commands until the game ends or the cap is hit. */
+function randomPlayout(seed: string, maxCommands = 300): GameState {
+  return recordedPlayout(seed, maxCommands).state;
 }
 
 describe("property: random legal games (§133–§135)", () => {
@@ -168,6 +210,61 @@ describe("property: random legal games (§133–§135)", () => {
       expect(final.resultType).not.toBeNull();
     }
     expect(countAllCards(final)).toBe(104);
+  });
+});
+
+describe("property: replay determinism (§102, §179)", () => {
+  it.each(["replay-1", "replay-2", "replay-3"])(
+    "replaying a recorded command stream reproduces the exact final state (%s)",
+    (seed) => {
+      const playout = recordedPlayout(seed, 300, testClock());
+      expect(playout.commands.length).toBeGreaterThan(0);
+
+      const replayed = replayCommands(playout.initialState, playout.commands, {
+        now: testClock(),
+      });
+
+      // Byte-for-byte identical final state and event stream.
+      expect(replayed.state).toEqual(playout.state);
+      expect(JSON.stringify(replayed.state)).toBe(
+        JSON.stringify(playout.state),
+      );
+      expect(replayed.events).toEqual(playout.events);
+      expect(replayed.events.length).toBeGreaterThan(0);
+    },
+  );
+
+  it("replay records the finish stamp in the terminal event (§102)", () => {
+    const playout = recordedPlayout("replay-stamp", 300, testClock());
+    const terminal = playout.events.find(
+      (e) => e.type === "GAME_WON" || e.type === "GAME_STALEMATED",
+    );
+    expect(terminal).toBeDefined();
+    expect((terminal as { finishedAt: string }).finishedAt).toBe(
+      playout.state.finishedAt,
+    );
+  });
+
+  it("replaying the same stream twice yields identical output (no hidden state)", () => {
+    const playout = recordedPlayout("replay-idempotent", 300, testClock());
+    const options = { now: testClock() };
+    const first = replayCommands(playout.initialState, playout.commands, options);
+    const second = replayCommands(
+      playout.initialState,
+      playout.commands,
+      { now: testClock() },
+    );
+    expect(JSON.stringify(first.state)).toBe(JSON.stringify(second.state));
+    expect(JSON.stringify(first.events)).toBe(JSON.stringify(second.events));
+  });
+
+  it("replay does not mutate the initial state", () => {
+    const playout = recordedPlayout("replay-pure", 300, testClock());
+    const before = JSON.stringify(playout.initialState);
+    replayCommands(playout.initialState, playout.commands, {
+      now: testClock(),
+    });
+    expect(JSON.stringify(playout.initialState)).toBe(before);
   });
 });
 
