@@ -1,0 +1,33 @@
+{
+  "name": "quintara",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Quintara — Build the line. Break the plan. Own the board. A premium browser-based strategy board game.",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "build": "npm run build -w @quintara/shared-types -w @quintara/game-engine -w @quintara/config -w @quintara/game-ai && npm run build -w @quintara/server -w @quintara/web",
+    "build:packages": "npm run build -w @quintara/shared-types -w @quintara/game-engine -w @quintara/config -w @quintara/game-ai",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "eslint .",
+    "dev:web": "npm run dev -w @quintara/web",
+    "dev:server": "npm run dev -w @quintara/server",
+    "start:server": "npm run start -w @quintara/server",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1",
+    "vitest": "^2.1.8"
+  }
+}

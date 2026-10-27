@@ -1,0 +1,436 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   QUINTARA DESIGN TOKENS (Design Plan §43, §88, §90)
+   Premium modern strategy table: dark graphite, warm cards, gold accent.
+   ========================================================================== */
+
+@theme {
+  --color-bg-deep: #0d1117;
+  --color-bg-panel: #151b23;
+  --color-surface: #1c2430;
+  --color-surface-2: #232d3b;
+  --color-card: #f5f1e8;
+  --color-card-muted: #ddd7ca;
+  --color-text-primary: #f7f9fc;
+  --color-text-secondary: #9ba7b6;
+  --color-accent: #d7ad62;
+  --color-accent-soft: rgba(215, 173, 98, 0.16);
+  --color-team-blue: #3f83f8;
+  --color-team-red: #ef5350;
+  --color-team-green: #4fc18c;
+  --color-team-gold: #e3b341;
+  --color-success: #48bb78;
+  --color-danger: #ef5350;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+
+  --font-display: var(--font-display), "Avenir Next", "Segoe UI", sans-serif;
+  --font-body: var(--font-body), "Segoe UI", system-ui, sans-serif;
+}
+
+:root {
+  /* Motion system (Design Plan §88) */
+  --motion-fast: 120ms;
+  --motion-medium: 220ms;
+  --motion-slow: 420ms;
+  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.7, 0, 0.84, 0);
+
+  --shadow-panel: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --shadow-card: 0 6px 18px rgba(0, 0, 0, 0.35);
+  --shadow-marker: 0 4px 10px rgba(0, 0, 0, 0.45);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+html,
+body {
+  min-height: 100%;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(215, 173, 98, 0.06), transparent 60%),
+    var(--color-bg-deep);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+/* App shell fills the viewport on phones without horizontal scrolling (§37). */
+#__next_root {
+  min-height: 100dvh;
+}
+
+::selection {
+  background: rgba(215, 173, 98, 0.35);
+}
+
+/* Accessible focus visibility (§64). */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* ==========================================================================
+   Reusable primitives
+   ========================================================================== */
+
+.panel {
+  background: color-mix(in srgb, var(--color-bg-panel) 88%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(14px);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.25rem;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition:
+    transform var(--motion-fast) var(--ease-standard),
+    background var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.btn:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.btn-primary {
+  background: linear-gradient(180deg, #e6c177, var(--color-accent));
+  color: #241c08;
+  box-shadow: 0 6px 18px rgba(215, 173, 98, 0.35);
+}
+
+.btn-primary:hover {
+  box-shadow: 0 10px 26px rgba(215, 173, 98, 0.45);
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.btn-secondary:hover {
+  background: var(--color-surface-2);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.btn-ghost:hover {
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ==========================================================================
+   Team markers (§44): colour + symbol + texture, never colour alone.
+   ========================================================================== */
+
+.team-marker {
+  width: 62%;
+  height: 62%;
+  border-radius: 999px;
+  position: relative;
+  box-shadow:
+    var(--shadow-marker),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.35),
+    inset 0 3px 6px rgba(255, 255, 255, 0.25);
+}
+
+.team-marker::after {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border-radius: inherit;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+}
+
+/* Blue = concentric circle */
+.marker-blue {
+  background:
+    radial-gradient(circle at 32% 28%, #8ab6ff, var(--color-team-blue) 58%, #1e4fa8);
+}
+.marker-blue::after {
+  border-radius: 999px;
+  border-width: 3px;
+  inset: 22%;
+}
+
+/* Red = diamond */
+.marker-red {
+  background: radial-gradient(circle at 32% 28%, #ff9d9b, var(--color-team-red) 58%, #a12927);
+}
+.marker-red::after {
+  border-radius: 4px;
+  transform: rotate(45deg);
+  inset: 20%;
+  border-width: 3px;
+}
+
+/* Green = triangle */
+.marker-green {
+  background: radial-gradient(circle at 32% 28%, #9be7c4, var(--color-team-green) 58%, #1e7a52);
+}
+.marker-green::after {
+  clip-path: polygon(50% 8%, 92% 88%, 8% 88%);
+  border: none;
+  background: rgba(255, 255, 255, 0.4);
+  inset: 18%;
+}
+
+/* Gold = square */
+.marker-gold {
+  background: radial-gradient(circle at 32% 28%, #ffe29a, var(--color-team-gold) 58%, #a37b12);
+}
+.marker-gold::after {
+  border-radius: 4px;
+  inset: 20%;
+  border-width: 3px;
+}
+
+/* ==========================================================================
+   Cards (§39–§41): original vector-style miniature cards.
+   ========================================================================== */
+
+.playing-card {
+  background: linear-gradient(160deg, #fbf8f1, var(--color-card));
+  color: #1d222b;
+  border-radius: 10px;
+  box-shadow: var(--shadow-card);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  position: relative;
+  user-select: none;
+  transition:
+    transform var(--motion-medium) var(--ease-enter),
+    box-shadow var(--motion-medium) var(--ease-standard),
+    border-color var(--motion-medium) var(--ease-standard);
+}
+
+.playing-card.is-red {
+  color: #b3261e;
+}
+
+.playing-card.is-selected {
+  transform: translateY(-10px) scale(1.035);
+  border-color: var(--color-accent);
+  box-shadow:
+    0 16px 34px rgba(0, 0, 0, 0.45),
+    0 0 0 2px rgba(215, 173, 98, 0.7);
+}
+
+.playing-card.is-playable:hover {
+  transform: translateY(-4px) scale(1.02);
+}
+
+.playing-card.is-dead {
+  filter: grayscale(0.75) brightness(0.82);
+}
+
+.playing-card.is-disabled {
+  opacity: 0.55;
+}
+
+.card-back {
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(215, 173, 98, 0.16) 0 6px,
+      transparent 6px 12px
+    ),
+    radial-gradient(circle at 50% 38%, #2b3648, #1a2230 70%);
+  border: 1px solid rgba(215, 173, 98, 0.35);
+  position: relative;
+}
+
+.card-back::after {
+  /* Quintara interlocking five-node lattice motif (§40) */
+  content: "";
+  position: absolute;
+  inset: 18%;
+  border: 2px solid rgba(215, 173, 98, 0.5);
+  border-radius: 6px;
+  transform: rotate(45deg);
+  box-shadow: inset 0 0 0 3px rgba(215, 173, 98, 0.12);
+}
+
+/* ==========================================================================
+   Board (§42, §49–§50): premium table surface with legal-move guidance.
+   ========================================================================== */
+
+.board-surface {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.03), transparent 45%),
+    var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: clamp(0.55rem, 1.6vw, 1.15rem);
+  box-shadow:
+    0 26px 60px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.board-grid {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: clamp(2px, 0.5vw, 6px);
+  aspect-ratio: 1 / 1;
+  width: 100%;
+}
+
+.board-cell {
+  position: relative;
+  border-radius: 7px;
+  background: linear-gradient(170deg, #fdfaf3, var(--color-card-muted));
+  color: #232a35;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+.board-cell.is-wild {
+  background:
+    radial-gradient(circle at 50% 42%, rgba(215, 173, 98, 0.85), rgba(215, 173, 98, 0.35) 62%, rgba(215, 173, 98, 0.12));
+  border: 1px solid rgba(215, 173, 98, 0.55);
+}
+
+.board-cell.is-legal {
+  cursor: pointer;
+  box-shadow: 0 0 0 2px rgba(215, 173, 98, 0.75), 0 0 18px rgba(215, 173, 98, 0.35);
+  animation: legal-pulse 1.6s var(--ease-standard) infinite;
+}
+
+.board-cell.is-legal:hover {
+  transform: translateY(-2px) scale(1.02);
+}
+
+.board-cell.is-dimmed {
+  opacity: 0.38;
+}
+
+.board-cell.is-targetable {
+  cursor: pointer;
+  box-shadow: 0 0 0 2px rgba(239, 83, 80, 0.8), 0 0 18px rgba(239, 83, 80, 0.35);
+}
+
+@keyframes legal-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px rgba(215, 173, 98, 0.75), 0 0 14px rgba(215, 173, 98, 0.28);
+  }
+  50% {
+    box-shadow: 0 0 0 2px rgba(215, 173, 98, 0.95), 0 0 24px rgba(215, 173, 98, 0.5);
+  }
+}
+
+/* Completed sequence line trace (§47) */
+.sequence-trace {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 2px rgba(215, 173, 98, 0.8);
+}
+
+/* ==========================================================================
+   Toasts, overlays, utility (§92–§93)
+   ========================================================================== */
+
+.toast {
+  background: var(--color-surface-2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 1rem;
+  box-shadow: var(--shadow-panel);
+  font-size: 0.9rem;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 11, 16, 0.72);
+  backdrop-filter: blur(8px);
+  z-index: 50;
+  padding: 1.25rem;
+}
+
+/* Circular turn timer (§56) */
+.timer-ring {
+  transform: rotate(-90deg);
+}
+
+/* Horizontal hand dock scroll (§52) */
+.hand-dock {
+  display: flex;
+  gap: clamp(0.4rem, 1.2vw, 0.85rem);
+  overflow-x: auto;
+  padding: 0.75rem 0.25rem calc(0.75rem + var(--safe-bottom));
+  scrollbar-width: thin;
+  scrollbar-color: rgba(215, 173, 98, 0.4) transparent;
+}
+
+@media (min-width: 900px) {
+  .hand-dock {
+    justify-content: center;
+    overflow-x: visible;
+  }
+}
+
+/* Reduced motion (§65): replace movement with fades. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: var(--motion-fast) !important;
+    scroll-behavior: auto !important;
+  }
+
+  .playing-card.is-selected {
+    transform: none;
+  }
+
+  .board-cell.is-legal:hover {
+    transform: none;
+  }
+}
+
+/* High-contrast friendly text (§64) */
+.text-secondary {
+  color: var(--color-text-secondary);
+}
