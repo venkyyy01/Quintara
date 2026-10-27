@@ -48,7 +48,6 @@ function LocalPlay() {
     params.get("challenge") ? "HARD" : "MEDIUM",
   );
   const [playerCount, setPlayerCount] = useState(2);
-  const [aiCount, setAiCount] = useState(1);
   const [names, setNames] = useState<string[]>(["You", "Rival"]);
 
   useEffect(() => {
@@ -112,7 +111,6 @@ function LocalPlay() {
         playerCount={playerCount}
         setPlayerCount={(count) => {
           setPlayerCount(count);
-          setAiCount(Math.max(1, count - 1));
           setNames((prev) => {
             const next = [...prev];
             while (next.length < count) next.push("");

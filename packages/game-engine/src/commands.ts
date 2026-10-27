@@ -16,7 +16,7 @@ import {
 } from "./cards.js";
 import { isDeadCard } from "./dead-cards.js";
 import { discardCard, drawCards } from "./draw.js";
-import { EngineError, type EngineErrorCode } from "./errors.js";
+import { EngineError } from "./errors.js";
 import type { DomainEvent, EngineResult } from "./events.js";
 import {
   isOneEyedJack,
@@ -537,7 +537,7 @@ function registerSelectionAndFinishTurn(
     sequences,
     command.actionId,
   );
-  let current = registered.state;
+  const current = registered.state;
   const events: DomainEvent[] = [...preEvents, ...registered.events];
 
   // §73: victory is immediate once the requirement is reached.

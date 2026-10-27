@@ -13,7 +13,7 @@ import type {
   BoardDefinition,
   CellId,
 } from "./board.js";
-import type { Card, CardCode, CardId } from "./cards.js";
+import type { Card, CardId } from "./cards.js";
 import type { RngState } from "./rng.js";
 
 export type GameId = string;

@@ -13,7 +13,6 @@ import type { DomainEvent } from "./events.js";
 import { getLegalActions } from "./legal-actions.js";
 import {
   currentPlayerId,
-  getPlayer,
   type CompletedSequence,
   type GameResultType,
   type GameRulesConfig,

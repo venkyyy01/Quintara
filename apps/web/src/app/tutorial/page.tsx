@@ -12,7 +12,6 @@ import {
   currentPlayerId,
   engineErrorMessage,
   EngineError,
-  getPlayer,
   projectStateForViewer,
   scenario,
   type GameCommand,
@@ -27,12 +26,6 @@ interface Lesson {
   build: () => GameState;
   /** Returns true when the performed command fulfils the lesson. */
   isComplete: (before: GameState, command: GameCommand, after: GameState) => boolean;
-}
-
-function cellOf(state: GameState, code: string): string {
-  return state.boardDefinition.cells.find(
-    (c) => c.type === "CARD" && c.cardCode === code,
-  )!.id;
 }
 
 function coords(state: GameState, code: string) {

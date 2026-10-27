@@ -35,7 +35,7 @@ export function completeTurnAndAdvance(state: GameState): {
       turnNumber: state.turnNumber,
     });
   }
-  let current = advanceToNextPlayer(state);
+  const current = advanceToNextPlayer(state);
   events.push(...turnStartedEvents(current));
   return enforceNoLegalActionSafeguard(current, events);
 }

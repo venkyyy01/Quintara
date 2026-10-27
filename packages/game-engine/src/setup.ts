@@ -25,7 +25,6 @@ import type { EngineResult } from "./events.js";
 import { startTurnsWithSafeguard } from "./turns.js";
 import {
   RULES_VERSION,
-  type GameId,
   type GameRulesConfig,
   type GameState,
   type PlayerId,
@@ -221,7 +220,7 @@ export function createGame(options: CreateGameOptions): GameState {
   // Setup-time randomness uses its own deterministic stream seeded by the
   // provided seed so dealing and starting player are reproducible (§20, §22).
   const seed = options.seed ?? "quintara-local-default-seed";
-  let rng: RngState = createRngState(seed);
+  const rng: RngState = createRngState(seed);
 
   const deck = createStandardDeck();
   const cards: Record<CardId, Card> = {};

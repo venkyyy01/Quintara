@@ -23,7 +23,6 @@ import {
   type DomainEvent,
   type GameCommand,
   type GameState,
-  type PlayerId,
 } from "@quintara/game-engine";
 import {
   chooseBotAction,

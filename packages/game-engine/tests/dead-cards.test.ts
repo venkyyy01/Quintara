@@ -11,7 +11,7 @@ import {
   scenario,
   validateGameState,
 } from "../src/index.js";
-import { codeCells, codeCoords, handCardId } from "./helpers.js";
+import { codeCoords, handCardId } from "./helpers.js";
 
 function eightCard(state: ReturnType<typeof scenario.prototype.build>) {
   const id = Object.keys(state.cards).find(
