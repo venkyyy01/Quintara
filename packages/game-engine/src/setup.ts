@@ -183,6 +183,7 @@ export function createGame(options: CreateGameOptions): GameState {
     teamSizes,
     handSize: options.handSize,
     requiredSequences: options.requiredSequences,
+    maxDeadCardExchangesPerTurn: options.maxDeadCardExchangesPerTurn,
   });
 
   const handSize = options.handSize ?? standardHandSize(playerCount);
@@ -296,6 +297,7 @@ function validateGameConfig(input: {
   teamSizes: readonly number[];
   handSize?: number | undefined;
   requiredSequences?: number | undefined;
+  maxDeadCardExchangesPerTurn?: number | undefined;
 }): void {
   const { playerCount, teamSizes } = input;
 
@@ -344,6 +346,18 @@ function validateGameConfig(input: {
         "requiredSequences must be a positive integer",
       );
     }
+  }
+  // §29 is an invariant, not a tunable: the engine enforces at most one
+  // dead-card exchange per turn (single-use flag). Any other value would be
+  // silently ignored, so reject it at configuration time instead.
+  if (
+    input.maxDeadCardExchangesPerTurn !== undefined &&
+    input.maxDeadCardExchangesPerTurn !== 1
+  ) {
+    throw new EngineError(
+      "INVALID_GAME_CONFIG",
+      "§29 allows at most one dead-card exchange per turn; maxDeadCardExchangesPerTurn must be 1",
+    );
   }
   if (playerCount < 2) {
     throw new EngineError(

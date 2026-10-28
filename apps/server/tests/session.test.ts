@@ -8,8 +8,10 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import {
+  cardCellsForCode,
   currentPlayerId,
   getLegalActions,
+  isJackCode,
   scenario,
   type GameState,
 } from "@quintara/game-engine";
@@ -403,6 +405,152 @@ describe("room cleanup (§30)", () => {
     sessions.setConnection("solo", true);
     vi.advanceTimersByTime(5 * 60 * 1000);
     expect(sessions.getRoom(room.roomId)).toBeDefined();
+
+    vi.useRealTimers();
+  });
+});
+
+describe("room membership integrity (§28, §30)", () => {
+  function quietSessions() {
+    const sessions = new SessionManager();
+    sessions.attachSink({
+      send() {},
+      broadcastRoom() {},
+    });
+    return sessions;
+  }
+
+  it("a leaver's seat is released when the game has finished (rematch stays viable)", () => {
+    const { sessions, roomId } = setupGame();
+    const room = sessions.getRoom(roomId)!;
+    room.status = "FINISHED";
+    sessions.leaveRoom("bob");
+    // A FINISHED room keeps its roster for the rematch — a leaver must not
+    // ghost a seat and get auto-dealt into the next game.
+    expect(room.players.some((p) => p.playerId === "bob")).toBe(false);
+    const result = sessions.rematch(roomId, "alice");
+    // Shorthanded: the rematch must report the missing seat, not start.
+    expect(result.error).toBeTruthy();
+    expect(sessions.getRoom(roomId)!.status).toBe("LOBBY");
+  });
+
+  it("the host title migrates when the host leaves a lobby", () => {
+    const sessions = quietSessions();
+    const room = sessions.createRoom("alice", "Alice", "PRIVATE", {
+      playerCount: 2,
+      aiSeats: 0,
+    });
+    sessions.joinRoom("bob", "Bob", room.roomCode);
+    sessions.leaveRoom("alice");
+    const current = sessions.getRoom(room.roomId)!;
+    expect(current.hostPlayerId).toBe("bob");
+    expect(
+      current.players.some((p) => p.playerId === "bob" && p.isHost),
+    ).toBe(true);
+  });
+
+  it("a player belongs to exactly one room", () => {
+    const sessions = quietSessions();
+    const first = sessions.createRoom("alice", "Alice", "PRIVATE", {
+      playerCount: 2,
+      aiSeats: 0,
+    });
+    const second = sessions.createRoom("alice", "Alice", "PRIVATE", {
+      playerCount: 2,
+      aiSeats: 0,
+    });
+    expect(sessions.getRoomForPlayer("alice")!.id).toBe(second.roomId);
+    // The abandoned room is either disposed outright (empty lobby) or no
+    // longer lists alice — never a ghost seat.
+    const leftover = sessions.getRoom(first.roomId);
+    expect(
+      leftover === undefined ||
+        !leftover.players.some((p) => p.playerId === "alice"),
+    ).toBe(true);
+  });
+
+  it("spectating a password-protected room requires the password", () => {
+    const sessions = quietSessions();
+    const room = sessions.createRoom("host", "Host", "PRIVATE", {
+      playerCount: 2,
+      aiSeats: 0,
+      password: "secret",
+    });
+    expect(sessions.spectateRoom("spy", room.roomCode).error).toBeTruthy();
+    expect(
+      sessions.spectateRoom("spy", room.roomCode, "secret").error,
+    ).toBeUndefined();
+    expect(sessions.getRoom(room.roomId)!.spectators.has("spy")).toBe(true);
+  });
+
+  it("startGame on a finished room reports an error instead of redealing", () => {
+    const { sessions, roomId } = setupGame();
+    sessions.getRoom(roomId)!.status = "FINISHED";
+    const result = sessions.startGame(roomId, "alice");
+    expect(result.error).toBeTruthy();
+  });
+
+  it("an engine-invalid room configuration surfaces as a room error", () => {
+    const sessions = quietSessions();
+    // 5 seats with no custom configuration is rejected by the engine.
+    const room = sessions.createRoom("host", "Host", "PRIVATE", {
+      playerCount: 5,
+      aiSeats: 4,
+    });
+    const result = sessions.startGame(room.roomId, "host");
+    expect(result.error).toBeTruthy();
+  });
+});
+
+describe("timeout resolves exchange-only turns (§75, §94)", () => {
+  it("takes the dead-card exchange instead of stalling the turn forever", () => {
+    vi.useFakeTimers();
+    const sessions = new SessionManager();
+    sessions.attachSink({
+      send() {},
+      broadcastRoom() {},
+    });
+    const roomState = sessions.createRoom("a", "A", "PRIVATE", {
+      playerCount: 2,
+      aiSeats: 0,
+      turnDurationMs: 1000,
+    });
+    sessions.joinRoom("b", "B", roomState.roomCode);
+    sessions.startGame(roomState.roomId, "a");
+    const game = sessions.getRoom(roomState.roomId)!.game!;
+
+    // Rig: both seats hold exactly one dead card, draw pile empty. The only
+    // legal action for the active player is the dead-card exchange.
+    const base = game.currentState;
+    const normalCardId = (pid: string) =>
+      (base.hands[pid] ?? []).find(
+        (id) => !isJackCode(base.cards[id]!.code),
+      )!;
+    const cells = { ...base.board.cells };
+    for (const pid of ["a", "b"] as const) {
+      const teamId = base.players.find((p) => p.id === pid)!.teamId;
+      for (const id of cardCellsForCode(
+        base.boardDefinition,
+        base.cards[normalCardId(pid)]!.code,
+      )) {
+        cells[id] = { occupantTeamId: teamId, occupantPlayerId: pid };
+      }
+    }
+    game.currentState = {
+      ...base,
+      hands: { a: [normalCardId("a")], b: [normalCardId("b")] },
+      drawPile: [],
+      discardPiles: { a: [], b: [] },
+      board: { ...base.board, cells },
+    };
+
+    // First timeout exchanges and skips the active seat; the second resolves
+    // the other seat the same way and the stalemate safeguard ends the game.
+    vi.advanceTimersByTime(1000);
+    expect(game.processedActions.size).toBe(1);
+    vi.advanceTimersByTime(1000);
+    expect(game.currentState.status).toBe("FINISHED");
+    expect(game.currentState.resultType).toBe("STALEMATE");
 
     vi.useRealTimers();
   });

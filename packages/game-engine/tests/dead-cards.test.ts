@@ -5,10 +5,15 @@ import { describe, expect, it } from "vitest";
 import {
   applyCommand,
   canExchangeDeadCard,
+  cardCellsForCode,
+  createGame,
+  currentPlayerId,
   deadCardsInHand,
   getLegalActions,
   isDeadCard,
+  isJackCode,
   scenario,
+  startGame,
   validateGameState,
 } from "../src/index.js";
 import { codeCoords, handCardId } from "./helpers.js";
@@ -261,5 +266,97 @@ describe("dead-card exchange (§29–§30, §116)", () => {
     expect(legal.deadExchanges[0]?.cardId).toBe(
       handCardId(state, "p-A", "8H"),
     );
+  });
+});
+
+describe("exchange path is replay-deterministic (§102)", () => {
+  /**
+   * Both seats hold exactly one dead card and the draw pile is empty: each
+   * exchange draws the same card back, both turns are skipped and the game
+   * ends in a stalemate. The stalemate timestamp is the only clock consumer
+   * inside the exchange path, so it must come from the injected clock.
+   */
+  function deadEndState() {
+    const base = startGame(
+      createGame({
+        players: [
+          { id: "p-a", name: "A" },
+          { id: "p-b", name: "B" },
+        ],
+        seed: "exchange-clock",
+      }),
+    ).state;
+    const normalCardId = (pid: string) =>
+      (base.hands[pid] ?? []).find(
+        (id) => !isJackCode(base.cards[id]!.code),
+      )!;
+    const aCard = normalCardId("p-a");
+    const bCard = normalCardId("p-b");
+    const cells = { ...base.board.cells };
+    for (const [cardId, playerId] of [
+      [aCard, "p-a"],
+      [bCard, "p-b"],
+    ] as const) {
+      const teamId = base.players.find((p) => p.id === playerId)!.teamId;
+      for (const id of cardCellsForCode(
+        base.boardDefinition,
+        base.cards[cardId]!.code,
+      )) {
+        cells[id] = { occupantTeamId: teamId, occupantPlayerId: playerId };
+      }
+    }
+    return {
+      ...base,
+      hands: { "p-a": [aCard], "p-b": [bCard] },
+      drawPile: [],
+      discardPiles: { "p-a": [], "p-b": [] },
+      board: { ...base.board, cells },
+    };
+  }
+
+  it("stalemate after an exchange uses the injected clock, never the wall clock", () => {
+    const FIXED = "2020-01-01T00:00:00.000Z";
+    const now = () => FIXED;
+    let current = deadEndState();
+    for (let i = 0; i < 2; i++) {
+      const pid = currentPlayerId(current)!;
+      const cardId = current.hands[pid]![0]!;
+      current = applyCommand(
+        current,
+        {
+          type: "EXCHANGE_DEAD_CARD",
+          playerId: pid,
+          actionId: `x${i}`,
+          cardId,
+        },
+        { now },
+      ).state;
+    }
+    expect(current.status).toBe("FINISHED");
+    expect(current.resultType).toBe("STALEMATE");
+    expect(current.finishedAt).toBe(FIXED);
+  });
+});
+
+describe("dead-card exchange configuration (§29, §104)", () => {
+  const players = [
+    { id: "p-a", name: "A" },
+    { id: "p-b", name: "B" },
+  ];
+
+  it("rejects maxDeadCardExchangesPerTurn other than 1 (invariant, not a tunable)", () => {
+    for (const max of [0, 2, 5]) {
+      expect(() =>
+        createGame({ players, maxDeadCardExchangesPerTurn: max }),
+      ).toThrow(
+        expect.objectContaining({ code: "INVALID_GAME_CONFIG" }) as Error,
+      );
+    }
+  });
+
+  it("accepts the standard single exchange per turn", () => {
+    expect(() =>
+      createGame({ players, maxDeadCardExchangesPerTurn: 1 }),
+    ).not.toThrow();
   });
 });

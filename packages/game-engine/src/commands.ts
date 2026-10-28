@@ -134,7 +134,7 @@ export function applyCommand(
 
   switch (command.type) {
     case "EXCHANGE_DEAD_CARD":
-      return exchangeDeadCard(state, command);
+      return exchangeDeadCard(state, command, options);
     case "PLAY_NORMAL_CARD":
       return playNormalCard(state, command, options);
     case "PLAY_WILD_JACK":
@@ -211,6 +211,7 @@ function assertTargetCellExists(
 function exchangeDeadCard(
   state: GameState,
   command: ExchangeDeadCardCommand,
+  options?: CommandOptions,
 ): EngineResult {
   assertActiveTurn(state, command.playerId, "AWAITING_MAIN_ACTION");
 
@@ -256,7 +257,10 @@ function exchangeDeadCard(
   };
 
   // §75: if the replacement leaves zero legal actions, skip the turn.
-  const safeguard = enforceNoLegalActionSafeguard(current);
+  // The injected clock (§102) must reach the skip/stalemate path too, or a
+  // recorded stream containing an exchange would replay with wall-clock
+  // timestamps.
+  const safeguard = enforceNoLegalActionSafeguard(current, [], options?.now);
   return {
     state: incrementVersionIfNeeded(safeguard.state, state.version),
     events: [...events, ...safeguard.events],

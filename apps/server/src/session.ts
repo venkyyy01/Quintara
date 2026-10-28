@@ -189,6 +189,9 @@ export class SessionManager {
       });
     }
 
+    // A player belongs to at most one room: creating a room abandons any
+    // previous membership, or the old room keeps a ghost seat forever.
+    this.leaveRoom(hostPlayerId);
     this.rooms.set(room.id, room);
     this.roomsByCode.set(room.code, room);
     this.roomByPlayer.set(hostPlayerId, room.id);
@@ -210,6 +213,9 @@ export class SessionManager {
       // Rejoining an active game is allowed for reconnect (§30).
       const existing = room.players.find((p) => p.playerId === playerId);
       if (existing) {
+        if (this.roomByPlayer.get(playerId) !== room.id) {
+          this.leaveRoom(playerId);
+        }
         existing.connection = "CONNECTED";
         this.roomByPlayer.set(playerId, room.id);
         this.broadcastRoomState(room);
@@ -224,6 +230,11 @@ export class SessionManager {
       return { room: this.roomState(room) };
     }
 
+    // Single-room membership: joining abandons any previous room.
+    if (this.roomByPlayer.get(playerId) !== room.id) {
+      this.leaveRoom(playerId);
+    }
+
     room.players.push({
       playerId,
       displayName,
@@ -236,9 +247,19 @@ export class SessionManager {
     return { room: this.roomState(room) };
   }
 
-  spectateRoom(playerId: string, roomCode: string): { error?: string } {
+  spectateRoom(
+    playerId: string,
+    roomCode: string,
+    password?: string,
+  ): { error?: string } {
     const room = this.roomsByCode.get(roomCode.trim().toUpperCase());
     if (!room) return { error: "Room not found." };
+    if (room.options.password && room.options.password !== password) {
+      return { error: "Incorrect room password." };
+    }
+    if (this.roomByPlayer.get(playerId) !== room.id) {
+      this.leaveRoom(playerId);
+    }
     room.spectators.add(playerId);
     this.roomByPlayer.set(playerId, room.id);
     this.sink.send(playerId, { type: "ROOM_STATE", room: this.roomState(room) });
@@ -267,9 +288,7 @@ export class SessionManager {
     }
     const player = room.players.find((p) => p.playerId === playerId);
     if (player && !player.isAi) {
-      if (room.status === "LOBBY") {
-        room.players = room.players.filter((p) => p.playerId !== playerId);
-      } else if (room.status === "ACTIVE") {
+      if (room.status === "ACTIVE") {
         // §30/§96: disconnection does not immediately eject the player.
         player.connection = "RECONNECTING";
         setTimeout(() => {
@@ -279,6 +298,19 @@ export class SessionManager {
             this.broadcastRoomState(room);
           }
         }, RECONNECT_GRACE_MS);
+      } else {
+        // LOBBY and FINISHED release the seat immediately. A FINISHED room
+        // keeps its roster for the rematch — a departed player must not
+        // ghost a seat, or the rematch starts shorthanded or not at all.
+        room.players = room.players.filter((p) => p.playerId !== playerId);
+        if (room.hostPlayerId === playerId) {
+          // Host migration: the room must remain startable.
+          const nextHost = room.players.find((p) => !p.isAi);
+          if (nextHost) {
+            room.hostPlayerId = nextHost.playerId;
+            nextHost.isHost = true;
+          }
+        }
       }
     }
     this.roomByPlayer.delete(playerId);
@@ -420,42 +452,52 @@ export class SessionManager {
     if (room.hostPlayerId !== requesterId) {
       return { error: "Only the host can start the game." };
     }
-    if (room.status === "ACTIVE") return { error: "Game already started." };
+    if (room.status !== "LOBBY") return { error: "Game already started." };
 
     // The dealing configuration is derived from the seat count, so the room
     // must be exactly full (humans + AI seats) before the host may start.
-    if (room.status === "LOBBY") {
-      const teamSizesProvided = room.options.teamSizes.length > 0;
-      const target = teamSizesProvided
-        ? room.options.teamSizes.reduce((a, b) => a + b, 0)
-        : room.options.playerCount;
-      if (room.players.length < target) {
-        return {
-          error: `Waiting for players — ${target - room.players.length} more seat(s) needed.`,
-        };
-      }
-      if (room.players.length > target) {
-        return { error: "Too many players for this configuration." };
-      }
-      if (!room.players.some((p) => !p.isAi)) {
-        return { error: "At least one human player is required." };
-      }
+    const teamSizesProvided = room.options.teamSizes.length > 0;
+    const target = teamSizesProvided
+      ? room.options.teamSizes.reduce((a, b) => a + b, 0)
+      : room.options.playerCount;
+    if (room.players.length < target) {
+      return {
+        error: `Waiting for players — ${target - room.players.length} more seat(s) needed.`,
+      };
+    }
+    if (room.players.length > target) {
+      return { error: "Too many players for this configuration." };
+    }
+    if (!room.players.some((p) => !p.isAi)) {
+      return { error: "At least one human player is required." };
     }
 
-    const created = createGame({
-      gameId: room.id,
-      players: room.players.map((p) => ({
-        id: p.playerId,
-        name: p.displayName,
-      })),
-      teamSizes: room.options.teamSizes.length
-        ? room.options.teamSizes
-        : undefined,
-      requiredSequences: room.options.requiredSequences ?? undefined,
-      turnDurationMs: room.options.turnDurationMs,
-      seed: generateSecureSeed(),
-    });
-    const started = startGame(created).state;
+    // Room options arrive from clients; a configuration the engine rejects
+    // must surface as a room error, not an unhandled throw.
+    let started: GameState;
+    try {
+      const created = createGame({
+        gameId: room.id,
+        players: room.players.map((p) => ({
+          id: p.playerId,
+          name: p.displayName,
+        })),
+        teamSizes: room.options.teamSizes.length
+          ? room.options.teamSizes
+          : undefined,
+        requiredSequences: room.options.requiredSequences ?? undefined,
+        turnDurationMs: room.options.turnDurationMs,
+        seed: generateSecureSeed(),
+      });
+      started = startGame(created).state;
+    } catch (error) {
+      return {
+        error:
+          error instanceof EngineError
+            ? error.message || engineErrorMessage(error.code)
+            : "Could not start this game configuration.",
+      };
+    }
 
     const game: StoredGame = {
       gameId: room.id,
@@ -578,7 +620,9 @@ export class SessionManager {
     playerId: string,
   ): { ok?: boolean; error?: string } {
     const room = this.rooms.get(roomId);
-    if (!room || room.status !== "FINISHED") return {};
+    if (!room || room.status !== "FINISHED") {
+      return { error: "No finished game to rematch." };
+    }
     if (room.hostPlayerId !== playerId) {
       return { error: "Only the host can start the rematch." };
     }
@@ -657,9 +701,22 @@ export class SessionManager {
         game.currentState.version,
       );
       const { playerId: _ignored, ...rest } = command;
-      this.submitCommand(room.id, activeId, rest, `bot-${Date.now()}`);
+      const result = this.submitCommand(
+        room.id,
+        activeId,
+        rest,
+        `bot-${Date.now()}`,
+      );
+      if (!result.ok) {
+        // A rejected bot move must not strand the table — fall back to the
+        // deterministic timeout policy for this turn.
+        this.runTimeoutAction(room);
+      }
     } catch {
-      // Bot could not act — the engine safeguard covers stuck turns.
+      // Bot decision failed — the deterministic timeout policy still
+      // advances the turn (the engine skip safeguard only runs while a
+      // command is applied).
+      this.runTimeoutAction(room);
     }
   }
 
@@ -688,14 +745,27 @@ export class SessionManager {
       } else {
         const legal = getLegalActions(state, activeId);
         const main = legal.mainActions;
-        if (main.length === 0) return; // safeguard will skip
-        const chosen = pickTimeoutAction(state, activeId, main);
-        command = {
-          type: chosen.type,
-          actionId: `timeout-${Date.now()}`,
-          cardId: chosen.cardId,
-          targetCellId: chosen.targetCellId,
-        } as ClientGameCommand;
+        if (main.length === 0) {
+          // §75/§94: no main action, but an unused dead-card exchange may
+          // still be legal. Take it deterministically — abandoning the turn
+          // here would leave it stuck forever, because the engine's skip
+          // safeguard only runs while applying a command.
+          const exchange = legal.deadExchanges[0];
+          if (!exchange) return; // engine safeguard already resolved this
+          command = {
+            type: "EXCHANGE_DEAD_CARD",
+            actionId: `timeout-${Date.now()}`,
+            cardId: exchange.cardId,
+          };
+        } else {
+          const chosen = pickTimeoutAction(state, activeId, main);
+          command = {
+            type: chosen.type,
+            actionId: `timeout-${Date.now()}`,
+            cardId: chosen.cardId,
+            targetCellId: chosen.targetCellId,
+          } as ClientGameCommand;
+        }
       }
       this.submitCommand(room.id, activeId, command, `timeout-${Date.now()}`);
     } catch {
@@ -739,10 +809,8 @@ export class SessionManager {
       type: "ROOM_STATE",
       room: this.roomState(room),
     };
+    // sink.broadcastRoom already delivers to players *and* spectators.
     this.sink.broadcastRoom(room.id, message);
-    for (const spectator of room.spectators) {
-      this.sink.send(spectator, message);
-    }
   }
 
   private broadcastGameState(room: Room, events?: readonly DomainEvent[]): void {
