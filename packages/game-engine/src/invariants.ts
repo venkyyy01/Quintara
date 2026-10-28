@@ -15,10 +15,12 @@ import {
   intersectionSize,
   qualifiesForTeam,
 } from "./sequences.js";
-import type {
-  CompletedSequence,
-  GameState,
-  SequenceId,
+import { standardTeamConfigurations } from "./setup.js";
+import {
+  RULES_VERSION,
+  type CompletedSequence,
+  type GameState,
+  type SequenceId,
 } from "./state.js";
 
 export function validateGameState(state: GameState): string[] {
@@ -78,6 +80,82 @@ export function validateGameState(state: GameState): string[] {
     } else if (teamsWith[0]?.id !== player.teamId) {
       issues.push(`player ${player.id} team mismatch`);
     }
+  }
+
+  // Turn order contains every player exactly once (§7, §111).
+  if (state.turnOrder.length !== state.players.length) {
+    issues.push(
+      `turn order has ${state.turnOrder.length} seats for ${state.players.length} players`,
+    );
+  }
+  if (new Set(state.turnOrder).size !== state.turnOrder.length) {
+    issues.push("turn order contains duplicate players");
+  }
+  for (const player of state.players) {
+    const appearances = state.turnOrder.filter(
+      (id) => id === player.id,
+    ).length;
+    if (appearances !== 1) {
+      issues.push(`player ${player.id} appears ${appearances} times in turn order`);
+    }
+  }
+
+  // Standard configuration must match the immutable preset (§105, §158).
+  if (state.rulesVersion === RULES_VERSION) {
+    const sizes = state.teams.map((team) => team.memberIds.length);
+    const allowed = standardTeamConfigurations(state.players.length);
+    const matchesStandard = allowed.some(
+      (config) =>
+        config.length === sizes.length &&
+        config.every((size, index) => size === sizes[index]),
+    );
+    if (!matchesStandard) {
+      issues.push(
+        `team sizes [${sizes.join(", ")}] are not a Standard configuration`,
+      );
+    }
+    const expectedRequired = state.teams.length === 2 ? 2 : 1;
+    if (state.requiredSequences !== expectedRequired) {
+      issues.push(
+        `requiredSequences is ${state.requiredSequences}, expected ${expectedRequired}`,
+      );
+    }
+  }
+
+  // Status/turn-phase consistency (§157).
+  if (state.status === "FINISHED" && state.turnPhase !== "GAME_OVER") {
+    issues.push("finished game must be in GAME_OVER phase");
+  }
+  if (
+    state.status === "ACTIVE" &&
+    state.turnPhase !== "AWAITING_MAIN_ACTION" &&
+    state.turnPhase !== "AWAITING_SEQUENCE_SELECTION"
+  ) {
+    issues.push(`active game has invalid turn phase ${state.turnPhase}`);
+  }
+  if (
+    state.turnPhase === "AWAITING_SEQUENCE_SELECTION" &&
+    (state.pendingSequenceOptions?.length ?? 0) === 0
+  ) {
+    issues.push("sequence-selection phase has no pending options");
+  }
+  if (
+    state.turnPhase !== "AWAITING_SEQUENCE_SELECTION" &&
+    state.pendingSequenceOptions !== null
+  ) {
+    issues.push("pending sequence options outside sequence-selection phase");
+  }
+  if (
+    state.turnPhase === "AWAITING_SEQUENCE_SELECTION" &&
+    state.pendingSequenceActionId === null
+  ) {
+    issues.push("sequence-selection phase has no originating action");
+  }
+  if (
+    state.turnPhase !== "AWAITING_SEQUENCE_SELECTION" &&
+    state.pendingSequenceActionId !== null
+  ) {
+    issues.push("pending sequence action outside sequence-selection phase");
   }
 
   // Turn player exists (§111).

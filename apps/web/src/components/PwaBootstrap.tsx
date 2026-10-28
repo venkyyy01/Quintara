@@ -18,14 +18,54 @@ export function PwaBootstrap() {
   const hydrate = useSettings((s) => s.hydrate);
   const [installEvent, setInstallEvent] =
     useState<BeforeInstallPromptEvent | null>(null);
+  const [updateReady, setUpdateReady] = useState(false);
 
   useEffect(() => {
     hydrate();
 
+    let refreshing = false;
+    let visibilityHandler: (() => void) | null = null;
+    const onControllerChange = () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    };
     if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener(
+        "controllerchange",
+        onControllerChange,
+      );
       const register = () => {
         navigator.serviceWorker
           .register("/sw.js")
+          .then((registration) => {
+            const watch = () => {
+              if (registration.waiting && navigator.serviceWorker.controller) {
+                setUpdateReady(true);
+              }
+              registration.addEventListener("updatefound", () => {
+                const worker = registration.installing;
+                worker?.addEventListener("statechange", () => {
+                  if (
+                    worker.state === "installed" &&
+                    navigator.serviceWorker.controller
+                  ) {
+                    setUpdateReady(true);
+                  }
+                });
+              });
+            };
+            watch();
+            // Check for a new deploy on each launch and when the tab returns.
+            registration.update().catch(() => {});
+            const onVisible = () => {
+              if (document.visibilityState === "visible") {
+                registration.update().catch(() => {});
+              }
+            };
+            visibilityHandler = onVisible;
+            document.addEventListener("visibilitychange", onVisible);
+          })
           .catch(() => {
             // Offline caching unavailable (e.g. dev without SW) — non-fatal.
           });
@@ -52,34 +92,68 @@ export function PwaBootstrap() {
     window.addEventListener("beforeinstallprompt", onPrompt);
     return () => {
       window.removeEventListener("beforeinstallprompt", onPrompt);
+      if (visibilityHandler) {
+        document.removeEventListener("visibilitychange", visibilityHandler);
+      }
+      navigator.serviceWorker?.removeEventListener(
+        "controllerchange",
+        onControllerChange,
+      );
       unsubscribe();
     };
   }, [hydrate]);
 
-  if (!installEvent) return null;
+  if (!installEvent && !updateReady) return null;
 
   return (
-    <div className="fixed bottom-[calc(var(--safe-bottom)+1rem)] right-4 z-40">
-      <div className="toast flex items-center gap-3">
-        <span className="text-sm">Install Quintara</span>
-        <button
-          type="button"
-          className="btn btn-primary px-3 py-1.5 text-xs"
-          onClick={async () => {
-            await installEvent.prompt();
-            setInstallEvent(null);
-          }}
-        >
-          Install
-        </button>
-        <button
-          type="button"
-          className="btn btn-ghost px-2 py-1.5 text-xs"
-          onClick={() => setInstallEvent(null)}
-        >
-          Not now
-        </button>
-      </div>
+    <div className="fixed bottom-[calc(var(--safe-bottom)+1rem)] right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col gap-2">
+      {updateReady && (
+        <div className="toast flex items-center gap-3" role="status">
+          <span className="text-sm">A new version is ready</span>
+          <button
+            type="button"
+            className="btn btn-primary px-3 py-1.5 text-xs"
+            onClick={() => {
+              navigator.serviceWorker
+                .getRegistration()
+                .then((registration) => {
+                  registration?.waiting?.postMessage({ type: "SKIP_WAITING" });
+                });
+            }}
+          >
+            Refresh
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost px-2 py-1.5 text-xs"
+            onClick={() => setUpdateReady(false)}
+          >
+            Later
+          </button>
+        </div>
+      )}
+      {installEvent && (
+        <div className="toast flex items-center gap-3">
+          <span className="text-sm">Install Quintara</span>
+          <button
+            type="button"
+            className="btn btn-primary px-3 py-1.5 text-xs"
+            onClick={async () => {
+              await installEvent.prompt();
+              setInstallEvent(null);
+            }}
+          >
+            Install
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost px-2 py-1.5 text-xs"
+            onClick={() => setInstallEvent(null)}
+          >
+            Not now
+          </button>
+        </div>
+      )}
     </div>
   );
 }

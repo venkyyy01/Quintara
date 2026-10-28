@@ -300,13 +300,22 @@ button {
 .board-grid {
   display: grid;
   grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-rows: repeat(10, minmax(0, 1fr));
   gap: clamp(2px, 0.5vw, 6px);
   aspect-ratio: 1 / 1;
   width: 100%;
 }
 
+/* ARIA rows are structural only; display:contents keeps the CSS grid flat. */
+.board-row {
+  display: contents;
+}
+
 .board-cell {
   position: relative;
+  min-width: 0;
+  min-height: 0;
+  touch-action: manipulation;
   border-radius: 7px;
   background: linear-gradient(170deg, #fdfaf3, var(--color-card-muted));
   color: #232a35;

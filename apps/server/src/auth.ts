@@ -7,17 +7,29 @@
 
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
+const CONFIGURED_SECRET = process.env.QUINTARA_AUTH_SECRET?.trim();
+
+if (
+  process.env.NODE_ENV === "production" &&
+  (!CONFIGURED_SECRET || CONFIGURED_SECRET.length < 32)
+) {
+  throw new Error(
+    "QUINTARA_AUTH_SECRET must be set to at least 32 characters in production.",
+  );
+}
+
 const SECRET =
-  process.env.QUINTARA_AUTH_SECRET ??
-  (() => {
-    // Generated at boot for single-instance development. Production must set
-    // QUINTARA_AUTH_SECRET so tokens survive restarts.
-    const generated = randomUUID();
-    console.warn(
-      "[quintara] QUINTARA_AUTH_SECRET not set — using an ephemeral secret.",
-    );
-    return generated;
-  })();
+  CONFIGURED_SECRET && CONFIGURED_SECRET.length > 0
+    ? CONFIGURED_SECRET
+    : (() => {
+        // Generated at boot for single-instance development. Production must
+        // set QUINTARA_AUTH_SECRET so tokens survive restarts.
+        const generated = randomUUID();
+        console.warn(
+          "[quintara] QUINTARA_AUTH_SECRET not set — using an ephemeral secret.",
+        );
+        return generated;
+      })();
 
 export interface TokenPayload {
   readonly playerId: string;
@@ -51,8 +63,22 @@ export function verifyToken(token: string): TokenPayload | null {
     const payload = JSON.parse(
       Buffer.from(body, "base64url").toString("utf8"),
     ) as TokenPayload;
-    if (typeof payload.playerId !== "string") return null;
-    if (payload.expiresAt < Date.now()) return null;
+    if (typeof payload.playerId !== "string" || payload.playerId.length > 128) {
+      return null;
+    }
+    if (
+      typeof payload.displayName !== "string" ||
+      payload.displayName.length > 64
+    ) {
+      return null;
+    }
+    if (
+      typeof payload.expiresAt !== "number" ||
+      !Number.isFinite(payload.expiresAt) ||
+      payload.expiresAt < Date.now()
+    ) {
+      return null;
+    }
     return payload;
   } catch {
     return null;
@@ -60,13 +86,28 @@ export function verifyToken(token: string): TokenPayload | null {
 }
 
 export function createGuest(displayName?: string): TokenPayload {
-  const playerId = `guest-${randomUUID().slice(0, 8)}`;
-  const name = (displayName ?? "").trim().slice(0, 24) || randomGuestName();
+  // Full UUID: 122 bits of entropy. Short prefixes collide at scale and a
+  // collision would let two guests share a seat/hand projection.
+  const playerId = `guest-${randomUUID()}`;
+  const name = sanitiseDisplayName(displayName) || randomGuestName();
   return {
     playerId,
     displayName: name,
     expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 30,
   };
+}
+
+/**
+ * Strips control/bidi characters, normalises whitespace and bounds length.
+ * React escapes output, but names also flow into logs, replays and exports.
+ */
+export function sanitiseDisplayName(displayName?: string): string {
+  return (displayName ?? "")
+    .normalize("NFKC")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 24);
 }
 
 const ADJECTIVES = ["Swift", "Calm", "Bold", "Clever", "Bright", "Noble"];

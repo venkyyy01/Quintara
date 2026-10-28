@@ -5,6 +5,7 @@
 
 "use client";
 
+import { useEffect, useId, useRef } from "react";
 import { motion } from "framer-motion";
 import type {
   ProjectedState,
@@ -13,12 +14,78 @@ import type {
 import { useSettings } from "@/lib/settings";
 import { TeamBadge } from "./TeamMarker";
 
+/**
+ * Modal focus management: initial focus, Tab/Shift+Tab containment, Escape
+ * handling and focus restoration. Every overlay uses this so keyboard and
+ * screen-reader users are never stranded behind a dialog.
+ */
+function useDialogFocus(
+  onClose?: () => void,
+  enabled = true,
+): React.RefObject<HTMLDivElement | null> {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
+  useEffect(() => {
+    if (!enabled) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const previous =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+
+    const focusable = (): HTMLElement[] =>
+      Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => element.getClientRects().length > 0);
+
+    (focusable()[0] ?? panel).focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && closeRef.current) {
+        event.preventDefault();
+        closeRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (items.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = items[0] as HTMLElement;
+      const last = items[items.length - 1] as HTMLElement;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previous?.focus();
+    };
+  }, [enabled]);
+
+  return panelRef;
+}
+
 export function VictoryModal({
   projected,
   viewerId,
   onRematch,
   onQuit,
   hideRematch = false,
+  neutralResult = false,
 }: {
   projected: ProjectedState;
   viewerId: string | null;
@@ -26,6 +93,8 @@ export function VictoryModal({
   onQuit: () => void;
   /** Online rooms: only the host can trigger the rematch (§30). */
   hideRematch?: boolean;
+  /** Pass-and-play: the device is shared, so never call a side the loser. */
+  neutralResult?: boolean;
 }) {
   const winner = projected.teams.find((t) => t.id === projected.winnerTeamId);
   const isDraw = projected.resultType === "STALEMATE";
@@ -33,16 +102,24 @@ export function VictoryModal({
     viewerId !== null &&
     projected.players.find((p) => p.id === viewerId)?.teamId ===
       projected.winnerTeamId;
+  const titleId = useId();
+  const panelRef = useDialogFocus(onQuit);
 
   return (
-    <div className="overlay" role="dialog" aria-modal="true" aria-label="Game result">
+    <div className="overlay">
       <motion.div
+        ref={panelRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         className="panel w-full max-w-md p-8 text-center"
         initial={{ scale: 0.92, opacity: 0, y: 18 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 220, damping: 22 }}
       >
         <motion.h2
+          id={titleId}
           className="text-4xl font-bold tracking-[0.12em]"
           style={{
             background: "linear-gradient(180deg, #f6d99a, var(--color-accent))",
@@ -53,7 +130,13 @@ export function VictoryModal({
           animate={{ letterSpacing: "0.12em", opacity: 1 }}
           transition={{ delay: 0.15, duration: 0.5 }}
         >
-          {isDraw ? "STALEMATE" : viewerWon ? "VICTORY" : "DEFEAT"}
+          {isDraw
+            ? "STALEMATE"
+            : neutralResult
+              ? `${winner?.name ?? "WINNER"} WINS`
+              : viewerWon
+                ? "VICTORY"
+                : "DEFEAT"}
         </motion.h2>
 
         {!isDraw && winner && (
@@ -132,9 +215,16 @@ export function PassDeviceScreen({
   teamName: string;
   onReady: () => void;
 }) {
+  const titleId = useId();
+  const panelRef = useDialogFocus();
   return (
-    <div className="overlay" role="dialog" aria-modal="true" aria-label="Pass device">
+    <div className="overlay">
       <motion.div
+        ref={panelRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         className="panel w-full max-w-sm p-8 text-center"
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -142,7 +232,9 @@ export function PassDeviceScreen({
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-accent-soft text-3xl">
           🃏
         </div>
-        <h2 className="text-xl font-bold">Pass device to {playerName}</h2>
+        <h2 id={titleId} className="text-xl font-bold">
+          Pass device to {playerName}
+        </h2>
         <p className="mt-2 text-sm text-secondary">
           Playing for <strong className="text-text-primary">{teamName}</strong>
         </p>
@@ -165,10 +257,18 @@ export function SequenceSelectionPanel({
   options: readonly SequenceSelectionOption[];
   onSelect: (option: SequenceSelectionOption) => void;
 }) {
+  const titleId = useId();
   return (
-    <div className="panel p-4" role="dialog" aria-label="Choose a line to claim">
-      <h2 className="text-sm font-bold">
-        Two lines are possible — choose which one to claim
+    <div
+      className="panel p-4"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby={titleId}
+    >
+      <h2 id={titleId} className="text-sm font-bold">
+        {options.length > 1
+          ? "Two lines are possible — choose which one to claim"
+          : "Choose a line to claim"}
       </h2>
       <p className="mt-1 text-xs text-secondary">
         The chosen line becomes protected. (§66)
@@ -178,6 +278,7 @@ export function SequenceSelectionPanel({
           <button
             key={option.optionId}
             type="button"
+            autoFocus={index === 0}
             className="btn btn-secondary justify-start text-left"
             onClick={() => onSelect(option)}
           >
@@ -213,17 +314,32 @@ export function ReconnectOverlay({ message }: { message: string }) {
   );
 }
 
-export function SettingsPanel({ onClose }: { onClose: () => void }) {
+export function SettingsPanel({
+  onClose,
+  inline = false,
+}: {
+  onClose: () => void;
+  /** Embedded in the settings page instead of a modal overlay. */
+  inline?: boolean;
+}) {
   const settings = useSettings();
+  const titleId = useId();
+  const panelRef = useDialogFocus(onClose, !inline);
 
-  return (
-    <div className="overlay" role="dialog" aria-modal="true" aria-label="Settings">
-      <motion.div
-        className="panel w-full max-w-sm p-6"
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
-      >
-        <h2 className="text-lg font-bold">Settings</h2>
+  const panel = (
+    <motion.div
+      ref={panelRef}
+      tabIndex={inline ? undefined : -1}
+      role={inline ? undefined : "dialog"}
+      aria-modal={inline ? undefined : true}
+      aria-labelledby={titleId}
+      className={`panel w-full max-w-sm p-6 ${inline ? "max-w-none" : ""}`}
+      initial={inline ? false : { opacity: 0, scale: 0.96 }}
+      animate={inline ? undefined : { opacity: 1, scale: 1 }}
+    >
+        <h2 id={titleId} className="text-lg font-bold">
+          Settings
+        </h2>
 
         <label className="mt-4 block text-sm">
           Master volume
@@ -308,14 +424,46 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           </div>
         </fieldset>
 
-        <button
-          type="button"
-          className="btn btn-primary mt-6 w-full"
-          onClick={onClose}
-        >
-          Done
-        </button>
+        <fieldset className="mt-4">
+          <legend className="text-sm">Motion</legend>
+          <div className="mt-1.5 flex gap-2">
+            {(
+              [
+                [null, "System"],
+                [true, "Reduced"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={label}
+                type="button"
+                aria-pressed={settings.reducedMotion === value}
+                className={`btn flex-1 px-2 text-xs ${settings.reducedMotion === value ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => settings.update({ reducedMotion: value })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs text-secondary">
+            Reduced disables marker drops, card lifts and animated line traces.
+          </p>
+        </fieldset>
+
+        {!inline && (
+          <button
+            type="button"
+            className="btn btn-primary mt-6 w-full"
+            onClick={onClose}
+          >
+            Done
+          </button>
+        )}
       </motion.div>
-    </div>
   );
+
+  if (inline) {
+    return <section aria-labelledby={titleId}>{panel}</section>;
+  }
+
+  return <div className="overlay">{panel}</div>;
 }

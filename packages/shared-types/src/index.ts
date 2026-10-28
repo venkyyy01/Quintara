@@ -48,15 +48,31 @@ export type GameMode =
 
 export type AiDifficulty = "EASY" | "MEDIUM" | "HARD" | "EXPERT";
 
+/**
+ * Public room options. Secrets are write-only: `hasPassword` tells clients
+ * whether a password is required without ever broadcasting the password.
+ */
 export interface RoomOptions {
   readonly playerCount: number;
   readonly teamSizes: number[];
   readonly requiredSequences: number | null;
   readonly turnDurationMs: number | null;
   readonly isPublic: boolean;
-  readonly password: string | null;
+  readonly hasPassword: boolean;
   readonly aiSeats: number;
   readonly aiDifficulty: AiDifficulty;
+}
+
+/** Client-supplied room options. `password` is accepted but never echoed. */
+export interface RoomOptionsInput {
+  readonly playerCount?: number;
+  readonly teamSizes?: number[];
+  readonly requiredSequences?: number | null;
+  readonly turnDurationMs?: number | null;
+  readonly isPublic?: boolean;
+  readonly password?: string | null;
+  readonly aiSeats?: number;
+  readonly aiDifficulty?: AiDifficulty;
 }
 
 export interface RoomPlayerInfo {
@@ -94,7 +110,7 @@ export type ClientMessage =
       readonly type: "CREATE_ROOM";
       readonly requestId: string;
       readonly mode: GameMode;
-      readonly options: Partial<RoomOptions>;
+      readonly options: RoomOptionsInput;
     }
   | {
       readonly type: "JOIN_ROOM";
@@ -174,7 +190,7 @@ export type ServerMessage =
 export interface CreateRoomRequest {
   readonly displayName?: string;
   readonly mode: GameMode;
-  readonly options: Partial<RoomOptions>;
+  readonly options: RoomOptionsInput;
 }
 
 export interface JoinRoomRequest {

@@ -120,6 +120,7 @@ function advanceToNextPlayer(state: GameState): GameState {
     turnPhase: "AWAITING_MAIN_ACTION",
     deadCardExchangeUsed: false,
     pendingSequenceOptions: null,
+    pendingSequenceActionId: null,
   };
 }
 

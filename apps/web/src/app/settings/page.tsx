@@ -22,9 +22,7 @@ export default function SettingsPage() {
       </div>
       <div className="mt-6">
         {mounted ? (
-          <div className="[&_.overlay]:static [&_.overlay]:bg-transparent [&_.overlay]:p-0 [&_.overlay]:backdrop-blur-none [&_.overlay>.panel]:max-w-none">
-            <SettingsPanel onClose={() => {}} />
-          </div>
+          <SettingsPanel inline onClose={() => {}} />
         ) : (
           <div className="panel h-64 animate-pulse" />
         )}

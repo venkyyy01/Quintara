@@ -10,7 +10,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { CellId, SequenceSelectionOption } from "@quintara/game-engine";
 import type { AiDifficulty } from "@quintara/game-ai";
 import { GameScreen } from "@/components/GameScreen";
-import { useLocalGame, type LocalSeat } from "@/lib/local-game";
+import {
+  dailyLabel,
+  dailySeed,
+  useLocalGame,
+  type LocalSeat,
+} from "@/lib/local-game";
 
 const DIFFICULTIES: { id: AiDifficulty; label: string; hint: string }[] = [
   { id: "EASY", label: "Easy", hint: "Random moves with basic safety" },
@@ -40,28 +45,40 @@ function LocalPlay() {
         : params.get("quick")
           ? "SOLO"
           : null;
+  const isQuick = params.get("quick") !== null;
+  const isChallenge = params.get("challenge") !== null;
 
   const [mode, setMode] = useState<"SOLO" | "PASS_AND_PLAY" | null>(
     initialMode as "SOLO" | "PASS_AND_PLAY" | null,
   );
   const [difficulty, setDifficulty] = useState<AiDifficulty>(
-    params.get("challenge") ? "HARD" : "MEDIUM",
+    isChallenge ? "HARD" : "MEDIUM",
   );
   const [playerCount, setPlayerCount] = useState(2);
   const [names, setNames] = useState<string[]>(["You", "Rival"]);
 
   useEffect(() => {
-    if (initialMode === "SOLO" && !game.state) {
-      // Auto-start quick play and the Daily Challenge tile, both of which
-      // advertise a one-tap solo game (§57).
-      if (params.get("quick") || params.get("challenge")) {
-        startGame("SOLO");
-      }
+    if (isQuick || isChallenge) {
+      // Quick play and the Daily Challenge both advertise a one-tap game.
+      // The daily seed is identical for every player on the same local date.
+      startGame("SOLO", isChallenge ? dailySeed() : undefined);
+      return;
+    }
+    if (game.state) {
+      if (!initialMode && game.mode) setMode(game.mode);
+      return;
+    }
+    // Resume an interrupted match when the player opens local play directly.
+    if (!initialMode && game.hydrate()) {
+      setMode(game.mode);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function startGame(selected: "SOLO" | "PASS_AND_PLAY") {
+  function startGame(
+    selected: "SOLO" | "PASS_AND_PLAY",
+    seed?: string,
+  ) {
     const seats: LocalSeat[] = [];
     if (selected === "SOLO") {
       seats.push({ id: "p-human", name: names[0] || "You", isAi: false });
@@ -81,7 +98,7 @@ function LocalPlay() {
         });
       }
     }
-    game.start({ mode: selected, seats, difficulty });
+    game.start({ mode: selected, seats, difficulty, seed });
     setMode(selected);
   }
 
@@ -174,9 +191,15 @@ function LocalPlay() {
           : activeId
       }
       selectedCardId={game.selectedCardId}
-      lastPlacedCellId={null}
+      lastPlacedCellId={game.lastPlacedCellId}
       lastMoveSummary={game.lastMoveSummary}
       botThinking={game.botThinking}
+      notices={game.toasts}
+      onDismissNotice={(id) => game.dismissToast(Number(id))}
+      neutralResult={mode === "PASS_AND_PLAY"}
+      connectionLabel={
+        isChallenge ? `Daily Challenge · ${dailyLabel()}` : null
+      }
       handoff={{
         pending: game.awaitingHandoff,
         playerName: activeSeat?.name ?? "",
@@ -297,6 +320,16 @@ function SetupScreen(props: {
         <p className="mt-2 text-xs text-secondary">
           Standard counts only (§4): 2, 3, 4, 6, 8, 9, 10 or 12 players.
         </p>
+        {props.playerCount === 3 && (
+          <p
+            className="mt-2 rounded-[10px] border border-[rgba(215,173,98,0.35)] bg-accent-soft px-3 py-2 text-xs text-secondary"
+            role="note"
+          >
+            <strong className="text-text-primary">3-player note:</strong>{" "}
+            three teams share the board and games often end in a draw. 2, 4 or
+            6 players give the most decisive matches.
+          </p>
+        )}
       </section>
 
       <section className="mt-6">

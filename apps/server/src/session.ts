@@ -18,6 +18,9 @@ import {
   generateSecureSeed,
   getPlayer,
   getLegalActions,
+  MAX_REQUIRED_SEQUENCES,
+  MAX_TURN_DURATION_MS,
+  MIN_TURN_DURATION_MS,
   projectEventsForViewer,
   projectStateForViewer,
   resolveSequenceSelectionDefault,
@@ -30,6 +33,13 @@ import {
   type TeamId,
 } from "@quintara/game-engine";
 import {
+  createHash,
+  randomInt,
+  randomUUID,
+  scryptSync,
+  timingSafeEqual,
+} from "node:crypto";
+import {
   chooseBotAction,
   createBotContext,
   decisionToCommand,
@@ -41,6 +51,7 @@ import type {
   ConnectionStatus,
   GameMode,
   RoomOptions,
+  RoomOptionsInput,
   RoomPlayerInfo,
   RoomState,
   ServerMessage,
@@ -60,11 +71,16 @@ interface RoomPlayer {
   connection: ConnectionStatus;
 }
 
+/** Server-only room settings. The password hash never leaves this object. */
+interface RoomSettings extends Omit<RoomOptions, "hasPassword"> {
+  passwordHash: string | null;
+}
+
 interface Room {
   id: string;
   code: string;
   mode: GameMode;
-  options: RoomOptions;
+  options: RoomSettings;
   hostPlayerId: string;
   players: RoomPlayer[];
   spectators: Set<string>;
@@ -83,34 +99,247 @@ export interface SessionSink {
   broadcastRoom(roomId: string, message: ServerMessage): void;
 }
 
-const DEFAULT_OPTIONS: RoomOptions = {
+const DEFAULT_OPTIONS: RoomSettings = {
   playerCount: 2,
   teamSizes: [],
   requiredSequences: null,
   turnDurationMs: null,
   isPublic: false,
-  password: null,
+  passwordHash: null,
   aiSeats: 0,
   aiDifficulty: "MEDIUM",
 };
 
 const RECONNECT_GRACE_MS = 1000 * 60 * 3;
+const PENDING_ROOM_GRACE_MS = 1000 * 30;
+const LOBBY_TTL_MS = 1000 * 60 * 30;
+const FINISHED_TTL_MS = 1000 * 60 * 60 * 2;
+const QUICK_QUEUE_TTL_MS = 1000 * 60 * 2;
+const MAX_ROOM_PLAYERS = 12;
+const MAX_AI_SEATS = 11;
+const MAX_ROOMS = 1000;
+const MAX_ROOMS_PER_MINUTE = 10;
+const MAX_PASSWORD_LENGTH = 64;
+const ROOM_CODE_LENGTH = 8;
+const GAME_MODES: readonly GameMode[] = [
+  "SOLO",
+  "LOCAL",
+  "PRIVATE",
+  "QUICK_MATCH",
+  "RANKED",
+];
+const AI_DIFFICULTIES = ["EASY", "MEDIUM", "HARD", "EXPERT"] as const;
+
+/** Thrown when a caller exceeds a server resource limit. */
+export class RoomLimitError extends Error {
+  constructor(
+    readonly code: "RATE_LIMITED" | "SERVER_BUSY",
+    message: string,
+  ) {
+    super(message);
+    this.name = "RoomLimitError";
+  }
+}
+
+function hashPassword(password: string): string {
+  const salt = randomUUID().replaceAll("-", "");
+  const hash = scryptSync(password, salt, 32).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(stored: string | null, candidate: unknown): boolean {
+  if (!stored || typeof candidate !== "string") return false;
+  const [salt, expectedHex] = stored.split(":");
+  if (!salt || !expectedHex) return false;
+  const expected = Buffer.from(expectedHex, "hex");
+  const actual = scryptSync(candidate, salt, expected.length);
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
+function normaliseMode(mode: unknown): GameMode {
+  return typeof mode === "string" && GAME_MODES.includes(mode as GameMode)
+    ? (mode as GameMode)
+    : "PRIVATE";
+}
+
+function normalisePassword(password: unknown): string | null {
+  if (typeof password !== "string") return null;
+  const trimmed = password.trim();
+  return trimmed.length > 0 ? trimmed.slice(0, MAX_PASSWORD_LENGTH) : null;
+}
+
+function stableCommandPayload(command: GameCommand | ClientGameCommand): string {
+  // Stable key ordering makes a retry with re-ordered JSON keys count as the
+  // same action instead of a false ACTION_ID_REUSED.
+  const record = command as unknown as Record<string, unknown>;
+  const ordered = Object.keys(record)
+    .sort()
+    .map((key) => [key, record[key]]);
+  return createHash("sha256").update(JSON.stringify(ordered)).digest("hex");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isBoundedString(value: unknown, max = 128): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= max;
+}
+
+/**
+ * Rebuilds a command from an explicit allowlist. This both prevents unknown
+ * client fields from reaching the event/replay store and turns malformed
+ * shapes into a clean BAD_COMMAND instead of an exception.
+ */
+export function buildAuthoritativeCommand(
+  command: unknown,
+  playerId: string,
+): GameCommand | null {
+  if (!isRecord(command)) return null;
+  const { type, actionId } = command;
+  if (!isBoundedString(actionId) || typeof type !== "string") return null;
+
+  const rawVersion = command.expectedVersion;
+  if (
+    rawVersion !== undefined &&
+    (typeof rawVersion !== "number" ||
+      !Number.isInteger(rawVersion) ||
+      rawVersion < 0)
+  ) {
+    return null;
+  }
+  const base: {
+    playerId: string;
+    actionId: string;
+    expectedVersion?: number;
+  } = {
+    playerId,
+    actionId,
+    ...(rawVersion === undefined ? {} : { expectedVersion: rawVersion }),
+  };
+
+  switch (type) {
+    case "EXCHANGE_DEAD_CARD":
+      return isBoundedString(command.cardId)
+        ? ({ ...base, type, cardId: command.cardId } as GameCommand)
+        : null;
+    case "PLAY_NORMAL_CARD":
+    case "PLAY_WILD_JACK":
+    case "PLAY_REMOVE_JACK":
+      return isBoundedString(command.cardId) &&
+        isBoundedString(command.targetCellId, 16)
+        ? ({
+            ...base,
+            type,
+            cardId: command.cardId,
+            targetCellId: command.targetCellId,
+          } as GameCommand)
+        : null;
+    case "SELECT_SEQUENCE_SET": {
+      const sets = command.sequenceCellSets;
+      if (
+        !Array.isArray(sets) ||
+        sets.length === 0 ||
+        sets.length > 12 ||
+        !sets.every(
+          (set) =>
+            Array.isArray(set) &&
+            set.length > 0 &&
+            set.length <= 10 &&
+            set.every((cell) => isBoundedString(cell, 16)),
+        )
+      ) {
+        return null;
+      }
+      return {
+        ...base,
+        type,
+        sequenceCellSets: sets.map((set) => [...(set as string[])]),
+      } as GameCommand;
+    }
+    default:
+      return null;
+  }
+}
 
 export class SessionManager {
   private readonly rooms = new Map<string, Room>();
   private readonly roomsByCode = new Map<string, Room>();
   private readonly roomByPlayer = new Map<string, string>();
-  private readonly quickQueue: { playerId: string; displayName: string }[] = [];
+  private readonly quickQueue: {
+    playerId: string;
+    displayName: string;
+    queuedAt: number;
+  }[] = [];
   private readonly disconnectTimers = new Map<
     string,
     ReturnType<typeof setTimeout>
   >();
+  private readonly roomCreationLog = new Map<string, number[]>();
+  private janitor: ReturnType<typeof setInterval> | null = null;
   private sink: SessionSink = { send: () => {}, broadcastRoom: () => {} };
 
   constructor(private readonly store: GameStore = new InMemoryGameStore()) {}
 
   attachSink(sink: SessionSink): void {
     this.sink = sink;
+  }
+
+  /** Stops the janitor and every pending timer (graceful shutdown/tests). */
+  dispose(): void {
+    if (this.janitor) {
+      clearInterval(this.janitor);
+      this.janitor = null;
+    }
+    for (const timer of this.disconnectTimers.values()) clearTimeout(timer);
+    this.disconnectTimers.clear();
+    for (const room of this.rooms.values()) {
+      if (room.botTimer) clearTimeout(room.botTimer);
+      if (room.turnTimer) clearTimeout(room.turnTimer);
+    }
+    this.quickQueue.length = 0;
+  }
+
+  private ensureJanitor(): void {
+    if (this.janitor) return;
+    this.janitor = setInterval(() => this.sweepStale(), 60_000);
+    this.janitor.unref?.();
+  }
+
+  private sweepStale(): void {
+    const now = Date.now();
+    for (let i = this.quickQueue.length - 1; i >= 0; i--) {
+      const entry = this.quickQueue[i];
+      if (entry && now - entry.queuedAt >= QUICK_QUEUE_TTL_MS) {
+        this.quickQueue.splice(i, 1);
+      }
+    }
+    for (const room of [...this.rooms.values()]) {
+      const age = now - room.createdAt;
+      if (
+        (room.status === "LOBBY" && age > LOBBY_TTL_MS) ||
+        (room.status === "FINISHED" && age > FINISHED_TTL_MS)
+      ) {
+        this.disposeRoom(room);
+        continue;
+      }
+      // A REST-created room whose owner never opened a socket should not
+      // linger for the full lobby TTL.
+      if (
+        room.status === "LOBBY" &&
+        room.game === null &&
+        age > PENDING_ROOM_GRACE_MS &&
+        !room.players.some(
+          (p) =>
+            !p.isAi &&
+            (p.connection === "CONNECTED" ||
+              this.disconnectTimers.has(p.playerId)),
+        ) &&
+        room.spectators.size === 0
+      ) {
+        this.disposeRoom(room);
+      }
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -121,44 +350,98 @@ export class SessionManager {
     hostPlayerId: string,
     displayName: string,
     mode: GameMode,
-    partial: Partial<RoomOptions>,
+    partial: RoomOptionsInput,
+    hostConnected = true,
   ): RoomState {
+    if (this.rooms.size >= MAX_ROOMS) {
+      throw new RoomLimitError(
+        "SERVER_BUSY",
+        "The server is at capacity. Try again shortly.",
+      );
+    }
+    this.recordRoomCreation(hostPlayerId);
+    this.ensureJanitor();
+
+    // Treat the payload as untrusted even though the type says otherwise:
+    // REST/WS callers can send any JSON shape.
+    const input =
+      partial && typeof partial === "object"
+        ? (partial as RoomOptionsInput)
+        : {};
+
     // Normalise client-supplied options: a missing/invalid playerCount would
     // otherwise make createGame throw mid-startGame with a confusing error.
-    const requestedCount = Number(partial.playerCount);
+    const requestedCount = Number(input.playerCount);
     const playerCount =
-      Number.isInteger(requestedCount) && requestedCount >= 2
+      Number.isInteger(requestedCount) &&
+      requestedCount >= 2 &&
+      requestedCount <= MAX_ROOM_PLAYERS
         ? requestedCount
         : DEFAULT_OPTIONS.playerCount;
 
     // AI seats can never crowd out the host: at least one seat stays human.
-    const requestedAiSeats = Number(partial.aiSeats ?? DEFAULT_OPTIONS.aiSeats);
+    const requestedAiSeats = Number(input.aiSeats ?? DEFAULT_OPTIONS.aiSeats);
     const aiSeats =
       Number.isInteger(requestedAiSeats) && requestedAiSeats > 0
-        ? Math.min(playerCount - 1, requestedAiSeats)
+        ? Math.min(
+            playerCount - 1,
+            MAX_AI_SEATS,
+            requestedAiSeats,
+          )
         : 0;
 
     // A team configuration that does not match the seat count would make
     // createGame reject the game later; fall back to the default layout.
-    const requestedTeamSizes = partial.teamSizes ?? DEFAULT_OPTIONS.teamSizes;
+    const requestedTeamSizes = input.teamSizes;
     const teamSizes =
+      Array.isArray(requestedTeamSizes) &&
       requestedTeamSizes.length > 0 &&
+      requestedTeamSizes.length <= 3 &&
+      requestedTeamSizes.every(
+        (size) => Number.isInteger(size) && size > 0,
+      ) &&
       requestedTeamSizes.reduce((a, b) => a + b, 0) === playerCount
         ? [...requestedTeamSizes]
         : [];
 
-    const options: RoomOptions = {
-      ...DEFAULT_OPTIONS,
-      ...partial,
+    const requestedSequences = Number(input.requiredSequences);
+    const requiredSequences =
+      Number.isInteger(requestedSequences) &&
+      requestedSequences >= 1 &&
+      requestedSequences <= MAX_REQUIRED_SEQUENCES
+        ? requestedSequences
+        : null;
+
+    const requestedDuration = Number(input.turnDurationMs);
+    const turnDurationMs =
+      Number.isInteger(requestedDuration) &&
+      requestedDuration >= MIN_TURN_DURATION_MS &&
+      requestedDuration <= MAX_TURN_DURATION_MS
+        ? requestedDuration
+        : null;
+
+    const aiDifficulty =
+      typeof input.aiDifficulty === "string" &&
+      AI_DIFFICULTIES.includes(input.aiDifficulty as never)
+        ? (input.aiDifficulty as RoomSettings["aiDifficulty"])
+        : DEFAULT_OPTIONS.aiDifficulty;
+
+    const password = normalisePassword(input.password);
+    const options: RoomSettings = {
       playerCount,
-      aiSeats,
       teamSizes,
+      requiredSequences,
+      turnDurationMs,
+      isPublic: input.isPublic === true,
+      passwordHash: password ? hashPassword(password) : null,
+      aiSeats,
+      aiDifficulty,
     };
 
     const room: Room = {
-      id: `room-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      id: `room-${randomUUID()}`,
       code: this.unusedRoomCode(),
-      mode,
+      mode: normaliseMode(mode),
       options,
       hostPlayerId,
       players: [
@@ -167,7 +450,7 @@ export class SessionManager {
           displayName,
           isAi: false,
           isHost: true,
-          connection: "CONNECTED",
+          connection: hostConnected ? "CONNECTED" : "RECONNECTING",
         },
       ],
       spectators: new Set(),
@@ -198,36 +481,64 @@ export class SessionManager {
     return this.roomState(room);
   }
 
+  private recordRoomCreation(playerId: string): void {
+    const now = Date.now();
+    const recent = (this.roomCreationLog.get(playerId) ?? []).filter(
+      (timestamp) => now - timestamp < 60_000,
+    );
+    if (recent.length >= MAX_ROOMS_PER_MINUTE) {
+      throw new RoomLimitError(
+        "RATE_LIMITED",
+        "Too many rooms created. Wait a minute and try again.",
+      );
+    }
+    recent.push(now);
+    this.roomCreationLog.set(playerId, recent);
+  }
+
   joinRoom(
     playerId: string,
     displayName: string,
     roomCode: string,
     password?: string,
+    connected = true,
   ): { room?: RoomState; error?: string } {
-    const room = this.roomsByCode.get(roomCode.trim().toUpperCase());
-    if (!room) return { error: "Room not found. Check the code and try again." };
-    if (room.options.password && room.options.password !== password) {
-      return { error: "Incorrect room password." };
+    const code =
+      typeof roomCode === "string" ? roomCode.trim().toUpperCase() : "";
+    if (!code || code.length > ROOM_CODE_LENGTH) {
+      return { error: "Room not found. Check the code and try again." };
+    }
+    const room = this.roomsByCode.get(code);
+    if (!room) {
+      return { error: "Room not found. Check the code and try again." };
+    }
+
+    // A known member may reconnect with their signed identity without
+    // re-entering the password.
+    const existing = room.players.find((p) => p.playerId === playerId);
+    if (existing) {
+      if (this.roomByPlayer.get(playerId) !== room.id) {
+        this.leaveRoom(playerId);
+      }
+      existing.connection = connected ? "CONNECTED" : "RECONNECTING";
+      this.roomByPlayer.set(playerId, room.id);
+      this.broadcastRoomState(room);
+      return { room: this.roomState(room) };
+    }
+
+    // Uniform failure: never reveal whether a code exists to an unauthorised
+    // joiner (room enumeration).
+    if (
+      room.options.passwordHash !== null &&
+      !verifyPassword(room.options.passwordHash, password)
+    ) {
+      return { error: "Room not found or password incorrect." };
     }
     if (room.status !== "LOBBY") {
-      // Rejoining an active game is allowed for reconnect (§30).
-      const existing = room.players.find((p) => p.playerId === playerId);
-      if (existing) {
-        if (this.roomByPlayer.get(playerId) !== room.id) {
-          this.leaveRoom(playerId);
-        }
-        existing.connection = "CONNECTED";
-        this.roomByPlayer.set(playerId, room.id);
-        this.broadcastRoomState(room);
-        return { room: this.roomState(room) };
-      }
       return { error: "This game has already started." };
     }
     if (room.players.length >= room.options.playerCount) {
       return { error: "This room is full." };
-    }
-    if (room.players.some((p) => p.playerId === playerId)) {
-      return { room: this.roomState(room) };
     }
 
     // Single-room membership: joining abandons any previous room.
@@ -240,7 +551,7 @@ export class SessionManager {
       displayName,
       isAi: false,
       isHost: false,
-      connection: "CONNECTED",
+      connection: connected ? "CONNECTED" : "RECONNECTING",
     });
     this.roomByPlayer.set(playerId, room.id);
     this.broadcastRoomState(room);
@@ -252,10 +563,15 @@ export class SessionManager {
     roomCode: string,
     password?: string,
   ): { error?: string } {
-    const room = this.roomsByCode.get(roomCode.trim().toUpperCase());
+    const code =
+      typeof roomCode === "string" ? roomCode.trim().toUpperCase() : "";
+    const room = code ? this.roomsByCode.get(code) : undefined;
     if (!room) return { error: "Room not found." };
-    if (room.options.password && room.options.password !== password) {
-      return { error: "Incorrect room password." };
+    if (
+      room.options.passwordHash !== null &&
+      !verifyPassword(room.options.passwordHash, password)
+    ) {
+      return { error: "Room not found or password incorrect." };
     }
     if (this.roomByPlayer.get(playerId) !== room.id) {
       this.leaveRoom(playerId);
@@ -291,34 +607,64 @@ export class SessionManager {
       if (room.status === "ACTIVE") {
         // §30/§96: disconnection does not immediately eject the player.
         player.connection = "RECONNECTING";
-        setTimeout(() => {
-          const current = room.players.find((p) => p.playerId === playerId);
-          if (current && current.connection === "RECONNECTING") {
-            current.connection = "DISCONNECTED";
-            this.broadcastRoomState(room);
-          }
-        }, RECONNECT_GRACE_MS);
+        this.scheduleDisconnect(room, playerId);
       } else {
         // LOBBY and FINISHED release the seat immediately. A FINISHED room
         // keeps its roster for the rematch — a departed player must not
         // ghost a seat, or the rematch starts shorthanded or not at all.
-        room.players = room.players.filter((p) => p.playerId !== playerId);
-        if (room.hostPlayerId === playerId) {
-          // Host migration: the room must remain startable.
-          const nextHost = room.players.find((p) => !p.isAi);
-          if (nextHost) {
-            room.hostPlayerId = nextHost.playerId;
-            nextHost.isHost = true;
-          }
-        }
+        this.removeHumanPlayer(room, playerId);
       }
     }
+    if (room.hostPlayerId === playerId) this.promoteHost(room, playerId);
     this.roomByPlayer.delete(playerId);
     this.broadcastRoomState(room);
     this.sweepIfEmpty(room);
   }
 
+  private scheduleDisconnect(room: Room, playerId: string): void {
+    const existing = this.disconnectTimers.get(playerId);
+    if (existing) clearTimeout(existing);
+    this.disconnectTimers.set(
+      playerId,
+      setTimeout(() => {
+        this.disconnectTimers.delete(playerId);
+        const current = room.players.find((p) => p.playerId === playerId);
+        if (!current || current.connection !== "RECONNECTING") return;
+        if (room.status === "LOBBY") {
+          this.removeHumanPlayer(room, playerId);
+        } else {
+          current.connection = "DISCONNECTED";
+        }
+        if (room.hostPlayerId === playerId) this.promoteHost(room, playerId);
+        this.broadcastRoomState(room);
+        this.sweepIfEmpty(room);
+      }, RECONNECT_GRACE_MS),
+    );
+  }
+
+  private removeHumanPlayer(room: Room, playerId: string): void {
+    room.players = room.players.filter(
+      (p) => p.playerId !== playerId || p.isAi,
+    );
+  }
+
+  private promoteHost(room: Room, departingId?: string): void {
+    const candidates = room.players.filter(
+      (p) => !p.isAi && p.playerId !== departingId,
+    );
+    const nextHost =
+      candidates.find((p) => p.connection === "CONNECTED") ?? candidates[0];
+    if (!nextHost) return;
+    room.hostPlayerId = nextHost.playerId;
+    for (const player of room.players) {
+      player.isHost = player.playerId === nextHost.playerId;
+    }
+  }
+
   setConnection(playerId: string, connected: boolean): void {
+    // A socket that dies while queued must not stay in matchmaking forever.
+    if (!connected) this.cancelQuickMatch(playerId);
+
     const roomId = this.roomByPlayer.get(playerId);
     const room = roomId ? this.rooms.get(roomId) : undefined;
     if (!room) return;
@@ -334,20 +680,7 @@ export class SessionManager {
       player.connection = "CONNECTED";
     } else {
       player.connection = "RECONNECTING";
-      const existing = this.disconnectTimers.get(playerId);
-      if (existing) clearTimeout(existing);
-      this.disconnectTimers.set(
-        playerId,
-        setTimeout(() => {
-          this.disconnectTimers.delete(playerId);
-          const current = room.players.find((p) => p.playerId === playerId);
-          if (current && current.connection === "RECONNECTING") {
-            current.connection = "DISCONNECTED";
-            this.broadcastRoomState(room);
-            this.sweepIfEmpty(room);
-          }
-        }, RECONNECT_GRACE_MS),
-      );
+      this.scheduleDisconnect(room, playerId);
     }
     this.broadcastRoomState(room);
   }
@@ -359,18 +692,25 @@ export class SessionManager {
    */
   /** Invite codes key roomsByCode, so never reuse a code that is live. */
   private unusedRoomCode(): string {
-    for (let attempt = 0; attempt < 50; attempt++) {
+    for (let attempt = 0; attempt < 100; attempt++) {
       const code = drawRoomCode();
       if (!this.roomsByCode.has(code)) return code;
     }
-    return `Q${Date.now().toString(36).toUpperCase().slice(-5)}`;
+    throw new RoomLimitError(
+      "SERVER_BUSY",
+      "Could not allocate a room code. Try again shortly.",
+    );
   }
 
   private sweepIfEmpty(room: Room): void {
-    const anyConnected = room.players.some(
-      (p) => !p.isAi && p.connection === "CONNECTED",
+    // RECONNECTING humans are still potentially active; their grace timer
+    // calls sweepIfEmpty again once it expires.
+    const anyHuman = room.players.some(
+      (p) =>
+        !p.isAi &&
+        (p.connection === "CONNECTED" || p.connection === "RECONNECTING"),
     );
-    if (anyConnected || room.spectators.size > 0) return;
+    if (anyHuman || room.spectators.size > 0) return;
     this.disposeRoom(room);
   }
 
@@ -389,6 +729,9 @@ export class SessionManager {
     }
     this.rooms.delete(room.id);
     this.roomsByCode.delete(room.code);
+    // In-memory games are not needed after the room is gone; durable stores
+    // can implement deleteGame as a no-op or archive.
+    void this.store.deleteGame(room.id).catch(() => {});
   }
 
   // -------------------------------------------------------------------------
@@ -396,8 +739,9 @@ export class SessionManager {
   // -------------------------------------------------------------------------
 
   joinQuickMatch(playerId: string, displayName: string): void {
+    this.ensureJanitor();
     if (!this.quickQueue.some((entry) => entry.playerId === playerId)) {
-      this.quickQueue.push({ playerId, displayName });
+      this.quickQueue.push({ playerId, displayName, queuedAt: Date.now() });
     }
     this.sink.send(playerId, {
       type: "MATCHMAKING_STATUS",
@@ -420,8 +764,8 @@ export class SessionManager {
   private tryMatch(): void {
     if (this.quickQueue.length < 2) return;
     const [a, b] = this.quickQueue.splice(0, 2) as [
-      { playerId: string; displayName: string },
-      { playerId: string; displayName: string },
+      { playerId: string; displayName: string; queuedAt: number },
+      { playerId: string; displayName: string; queuedAt: number },
     ];
     const room = this.rooms.get(
       // createRoom registers everything we need.
@@ -471,6 +815,14 @@ export class SessionManager {
     if (!room.players.some((p) => !p.isAi)) {
       return { error: "At least one human player is required." };
     }
+    const absent = room.players.filter(
+      (p) => !p.isAi && p.connection !== "CONNECTED",
+    );
+    if (absent.length > 0) {
+      return {
+        error: `Waiting for ${absent.length} player(s) to connect.`,
+      };
+    }
 
     // Room options arrive from clients; a configuration the engine rejects
     // must surface as a room error, not an unhandled throw.
@@ -509,7 +861,7 @@ export class SessionManager {
       processedActions: new Map(),
       summary: null,
     };
-    void this.store.saveGame(game);
+    this.persistGame(game);
 
     room.game = game;
     room.status = "ACTIVE";
@@ -543,20 +895,33 @@ export class SessionManager {
       return { ok: false, errorCode: "GAME_NOT_ACTIVE", errorMessage: "No active game." };
     }
 
+    const authoritative = buildAuthoritativeCommand(command, playerId);
+    if (!authoritative) {
+      return {
+        ok: false,
+        errorCode: "BAD_COMMAND",
+        errorMessage: "That command is malformed.",
+      };
+    }
+
     // Idempotency (§79): a retried action returns the original outcome.
     // Keyed by (playerId, actionId): clients routinely reuse short actionIds
     // ("a1") across seats and turns, and a bare actionId would replay one
     // player's move as another's.
-    const actionKey = `${playerId}:${command.actionId}`;
+    const actionKey = `${playerId}:${authoritative.actionId}`;
+    const fingerprint = stableCommandPayload(authoritative);
     const processed = game.processedActions.get(actionKey);
     if (processed) {
+      if (processed.fingerprint !== fingerprint) {
+        return {
+          ok: false,
+          errorCode: "ACTION_ID_REUSED",
+          errorMessage:
+            "That action id was already used for a different move. Retry with a new id.",
+        };
+      }
       return { ok: true, version: processed.versionAfter, duplicate: true };
     }
-
-    const authoritative: GameCommand = {
-      ...(command as GameCommand),
-      playerId,
-    } as GameCommand;
 
     try {
       const result = applyCommand(game.currentState, authoritative);
@@ -569,9 +934,10 @@ export class SessionManager {
         playerId,
         requestId,
         versionAfter: result.state.version,
+        fingerprint,
         storedAt: Date.now(),
       });
-      void this.store.saveGame(game);
+      this.persistGame(game);
 
       // Broadcast per-viewer projections (§88) — never raw state (§23).
       this.broadcastGameState(room, result.events as DomainEvent[]);
@@ -697,7 +1063,7 @@ export class SessionManager {
       const command = decisionToCommand(
         decision,
         activeId,
-        `bot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        `bot-${randomUUID()}`,
         game.currentState.version,
       );
       const { playerId: _ignored, ...rest } = command;
@@ -773,6 +1139,12 @@ export class SessionManager {
     }
   }
 
+  private persistGame(game: StoredGame): void {
+    // Fire-and-forget is acceptable for the in-memory default, but a durable
+    // adapter must not produce an unhandled rejection.
+    void this.store.saveGame(game).catch(() => {});
+  }
+
   private finalizeGame(room: Room): void {
     const game = room.game;
     if (!game) return;
@@ -798,8 +1170,8 @@ export class SessionManager {
       }),
     };
     game.summary = summary;
-    void this.store.saveGame(game);
-    void this.store.saveSummary(summary);
+    this.persistGame(game);
+    void this.store.saveSummary(summary).catch(() => {});
     if (room.botTimer) clearTimeout(room.botTimer);
     if (room.turnTimer) clearTimeout(room.turnTimer);
   }
@@ -847,11 +1219,15 @@ export class SessionManager {
   }
 
   roomState(room: Room): RoomState {
+    const { passwordHash, ...publicOptions } = room.options;
     return {
       roomId: room.id,
       roomCode: room.code,
       mode: room.mode,
-      options: room.options,
+      options: {
+        ...publicOptions,
+        hasPassword: passwordHash !== null,
+      },
       status: room.status,
       hostPlayerId: room.hostPlayerId,
       players: room.players.map(
@@ -937,8 +1313,8 @@ const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 function drawRoomCode(): string {
   let code = "";
-  for (let i = 0; i < 6; i++) {
-    code += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+  for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
+    code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
   }
   return code;
 }

@@ -8,7 +8,7 @@
  */
 
 import type { CellId } from "./board.js";
-import { getCellDefinition } from "./board.js";
+import { getCellDefinition, SEQUENCE_LENGTH } from "./board.js";
 import {
   getCard,
   isJackCode,
@@ -162,9 +162,7 @@ function assertActiveTurn(
   playerId: PlayerId,
   phase: GameState["turnPhase"],
 ): void {
-  if (state.status === "FINISHED") {
-    throw new EngineError("GAME_ALREADY_FINISHED");
-  }
+  // §100: both LOBBY and FINISHED reject gameplay with GAME_NOT_ACTIVE.
   if (state.status !== "ACTIVE") {
     throw new EngineError("GAME_NOT_ACTIVE");
   }
@@ -471,11 +469,36 @@ function selectSequenceSet(
   }
 
   // §67: the client cannot submit arbitrary coordinates — the selection must
-  // equal one of the previously computed maximum valid options.
-  const providedKey = [...command.sequenceCellSets]
-    .map((cells) => canonicalCellKey([...cells]))
-    .sort()
-    .join("||");
+  // equal one of the previously computed maximum valid options. Validate the
+  // shape first so hostile JSON cannot raise a raw TypeError.
+  const rawSets = command.sequenceCellSets;
+  if (
+    !Array.isArray(rawSets) ||
+    rawSets.length === 0 ||
+    !rawSets.every(
+      (cells) =>
+        Array.isArray(cells) &&
+        cells.length === SEQUENCE_LENGTH &&
+        cells.every((cell) => typeof cell === "string"),
+    )
+  ) {
+    throw new EngineError(
+      "INVALID_SEQUENCE_SELECTION",
+      "sequenceCellSets must contain five-cell arrays",
+    );
+  }
+  let providedKey: string;
+  try {
+    providedKey = rawSets
+      .map((cells) => canonicalCellKey([...cells]))
+      .sort()
+      .join("||");
+  } catch {
+    throw new EngineError(
+      "INVALID_SEQUENCE_SELECTION",
+      "sequenceCellSets contains an invalid cell id",
+    );
+  }
 
   const matched = pendingOptions.find(
     (option) =>
@@ -496,6 +519,9 @@ function selectSequenceSet(
     matched.sequences,
     [],
     options,
+    // Attribute the completed sequences to the placement that created the
+    // prompt, not to the follow-up selection command (§66).
+    state.pendingSequenceActionId ?? command.actionId,
   );
 }
 
@@ -543,6 +569,7 @@ function resolvePlacementTurn(
       chosen,
       preEvents,
       options,
+      command.actionId,
     );
   }
 
@@ -552,6 +579,7 @@ function resolvePlacementTurn(
     ...state,
     turnPhase: "AWAITING_SEQUENCE_SELECTION",
     pendingSequenceOptions: selectionOptions,
+    pendingSequenceActionId: command.actionId,
     version: state.version + 1,
   };
   return {
@@ -574,12 +602,17 @@ function registerSelectionAndFinishTurn(
   sequences: readonly SequenceCandidate[],
   preEvents: DomainEvent[] = [],
   options?: CommandOptions,
+  sequenceActionId: ActionId = command.actionId,
 ): EngineResult {
   const playerId = command.playerId;
   const registered = registerSequences(
-    { ...state, pendingSequenceOptions: null },
+    {
+      ...state,
+      pendingSequenceOptions: null,
+      pendingSequenceActionId: null,
+    },
     sequences,
-    command.actionId,
+    sequenceActionId,
   );
   const current = registered.state;
   const events: DomainEvent[] = [...preEvents, ...registered.events];
@@ -591,7 +624,7 @@ function registerSelectionAndFinishTurn(
       current,
       teamId,
       playerId,
-      command.actionId,
+      sequenceActionId,
       options?.now,
     );
     return {

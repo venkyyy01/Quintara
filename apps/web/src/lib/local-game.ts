@@ -46,10 +46,212 @@ interface Toast {
   tone: "info" | "error" | "success";
 }
 
+export type LocalResult = "WIN" | "LOSS" | "DRAW" | "COMPLETE";
+
+export interface LocalGameRecord {
+  readonly id: string;
+  readonly mode: LocalMode;
+  readonly difficulty: AiDifficulty;
+  readonly result: LocalResult;
+  readonly winnerName: string | null;
+  readonly turns: number;
+  readonly finishedAt: string;
+  readonly durationMs: number;
+}
+
+export interface LocalStats {
+  readonly gamesPlayed: number;
+  readonly wins: number;
+  readonly losses: number;
+  readonly draws: number;
+  readonly currentStreak: number;
+  readonly bestStreak: number;
+  readonly history: readonly LocalGameRecord[];
+}
+
+interface LocalSave {
+  readonly schema: 1;
+  readonly mode: LocalMode;
+  readonly seats: LocalSeat[];
+  readonly difficulty: AiDifficulty;
+  readonly state: GameState;
+  readonly savedAt: string;
+}
+
+const SAVE_KEY = "quintara-local-save-v1";
+const STATS_KEY = "quintara-local-stats-v1";
+const MAX_HISTORY = 30;
+
+function storage(): Storage | null {
+  try {
+    return typeof window !== "undefined" ? window.localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+function isLocalMode(value: unknown): value is LocalMode {
+  return value === "SOLO" || value === "PASS_AND_PLAY";
+}
+
+function isDifficulty(value: unknown): value is AiDifficulty {
+  return (
+    value === "EASY" ||
+    value === "MEDIUM" ||
+    value === "HARD" ||
+    value === "EXPERT"
+  );
+}
+
+function isSeatList(value: unknown): value is LocalSeat[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.length <= 12 &&
+    value.every(
+      (seat) =>
+        typeof seat === "object" &&
+        seat !== null &&
+        typeof (seat as LocalSeat).id === "string" &&
+        typeof (seat as LocalSeat).name === "string" &&
+        typeof (seat as LocalSeat).isAi === "boolean",
+    )
+  );
+}
+
+function loadSave(): LocalSave | null {
+  const store = storage();
+  if (!store) return null;
+  try {
+    const raw = store.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<LocalSave>;
+    if (
+      parsed.schema !== 1 ||
+      !isLocalMode(parsed.mode) ||
+      !isSeatList(parsed.seats) ||
+      !isDifficulty(parsed.difficulty) ||
+      typeof parsed.state !== "object" ||
+      parsed.state === null ||
+      parsed.state.status !== "ACTIVE" ||
+      !Array.isArray(parsed.state.players) ||
+      typeof parsed.state.version !== "number"
+    ) {
+      store.removeItem(SAVE_KEY);
+      return null;
+    }
+    return parsed as LocalSave;
+  } catch {
+    return null;
+  }
+}
+
+function saveGame(snapshot: LocalSave): void {
+  const store = storage();
+  if (!store) return;
+  try {
+    store.setItem(SAVE_KEY, JSON.stringify(snapshot));
+  } catch {
+    // Quota or private mode — persistence is a convenience, never a gate.
+  }
+}
+
+function clearSave(): void {
+  storage()?.removeItem(SAVE_KEY);
+}
+
+export function loadLocalStats(): LocalStats {
+  const empty: LocalStats = {
+    gamesPlayed: 0,
+    wins: 0,
+    losses: 0,
+    draws: 0,
+    currentStreak: 0,
+    bestStreak: 0,
+    history: [],
+  };
+  const store = storage();
+  if (!store) return empty;
+  try {
+    const raw = store.getItem(STATS_KEY);
+    if (!raw) return empty;
+    const parsed = JSON.parse(raw) as Partial<LocalStats>;
+    if (
+      typeof parsed.gamesPlayed !== "number" ||
+      typeof parsed.wins !== "number" ||
+      typeof parsed.losses !== "number" ||
+      typeof parsed.draws !== "number" ||
+      typeof parsed.currentStreak !== "number" ||
+      typeof parsed.bestStreak !== "number" ||
+      !Array.isArray(parsed.history)
+    ) {
+      return empty;
+    }
+    return {
+      gamesPlayed: parsed.gamesPlayed,
+      wins: parsed.wins,
+      losses: parsed.losses,
+      draws: parsed.draws,
+      currentStreak: parsed.currentStreak,
+      bestStreak: parsed.bestStreak,
+      history: parsed.history.slice(0, MAX_HISTORY),
+    };
+  } catch {
+    return empty;
+  }
+}
+
+function recordResult(record: LocalGameRecord): void {
+  const store = storage();
+  if (!store) return;
+  const stats = loadLocalStats();
+  const history = [record, ...stats.history].slice(0, MAX_HISTORY);
+  const nextStreak =
+    record.mode === "SOLO"
+      ? record.result === "WIN"
+        ? stats.currentStreak + 1
+        : 0
+      : stats.currentStreak;
+  const next: LocalStats = {
+    gamesPlayed: stats.gamesPlayed + 1,
+    wins: stats.wins + (record.mode === "SOLO" && record.result === "WIN" ? 1 : 0),
+    losses:
+      stats.losses + (record.mode === "SOLO" && record.result === "LOSS" ? 1 : 0),
+    draws:
+      stats.draws + (record.mode === "SOLO" && record.result === "DRAW" ? 1 : 0),
+    currentStreak: nextStreak,
+    bestStreak: Math.max(stats.bestStreak, nextStreak),
+    history,
+  };
+  try {
+    store.setItem(STATS_KEY, JSON.stringify(next));
+  } catch {
+    // Ignore quota failures.
+  }
+}
+
+/** Stable seed shared by everyone playing the Daily Challenge on a given day. */
+export function dailySeed(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `quintara-daily-${year}-${month}-${day}`;
+}
+
+export function dailyLabel(date = new Date()): string {
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 interface LocalGameState {
   mode: LocalMode | null;
   seats: LocalSeat[];
   difficulty: AiDifficulty;
+  /** Fixed seed for challenge games; null for ordinary matches. */
+  seed: string | null;
   state: GameState | null;
   projected: ProjectedState | null;
   selectedCardId: string | null;
@@ -65,7 +267,10 @@ interface LocalGameState {
     mode: LocalMode;
     seats: LocalSeat[];
     difficulty: AiDifficulty;
+    seed?: string;
   }) => void;
+  /** Restores an interrupted local match, if one is saved. */
+  hydrate: () => boolean;
   rematch: () => void;
   quit: () => void;
 
@@ -121,6 +326,22 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
         : {}),
       ...(next.status !== "ACTIVE" ? { awaitingHandoff: false } : {}),
     });
+
+    if (next.status === "ACTIVE") {
+      const { mode, seats, difficulty } = get();
+      if (mode) {
+        saveGame({
+          schema: 1,
+          mode,
+          seats,
+          difficulty,
+          state: next,
+          savedAt: new Date().toISOString(),
+        });
+      }
+    } else {
+      clearSave();
+    }
 
     maybeScheduleBot(next);
   }
@@ -238,6 +459,39 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
     }
 
     if (state.status === "FINISHED") {
+      const mode = get().mode;
+      if (mode) {
+        const winner = state.winnerTeamId
+          ? (state.teams.find((team) => team.id === state.winnerTeamId) ?? null)
+          : null;
+        let result: LocalResult;
+        if (state.resultType === "STALEMATE") {
+          result = "DRAW";
+        } else if (mode === "PASS_AND_PLAY") {
+          result = "COMPLETE";
+        } else {
+          const human = get().seats.find((seat) => !seat.isAi);
+          const humanTeam = human
+            ? state.players.find((player) => player.id === human.id)?.teamId
+            : null;
+          result =
+            humanTeam && state.winnerTeamId === humanTeam ? "WIN" : "LOSS";
+        }
+        const finishedAt = state.finishedAt ?? new Date().toISOString();
+        recordResult({
+          id: state.id,
+          mode,
+          difficulty: get().difficulty,
+          result,
+          winnerName: winner?.name ?? null,
+          turns: state.turnNumber,
+          finishedAt,
+          durationMs: Math.max(
+            0,
+            new Date(finishedAt).getTime() - new Date(state.createdAt).getTime(),
+          ),
+        });
+      }
       if (state.winnerTeamId) {
         sounds.victory();
         haptic("medium");
@@ -263,6 +517,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
     mode: null,
     seats: [],
     difficulty: "MEDIUM",
+    seed: null,
     state: null,
     projected: null,
     selectedCardId: null,
@@ -272,7 +527,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
     lastMoveSummary: null,
     lastPlacedCellId: null,
 
-    start: ({ mode, seats, difficulty }) => {
+    start: ({ mode, seats, difficulty, seed }) => {
       if (botTimer) clearTimeout(botTimer);
       for (const key of Object.keys(botContexts)) delete botContexts[key];
 
@@ -280,9 +535,10 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
         gameId: `local-${Date.now()}`,
         players: seats.map((seat) => ({ id: seat.id, name: seat.name })),
         seed:
-          typeof crypto !== "undefined" && "randomUUID" in crypto
+          seed ??
+          (typeof crypto !== "undefined" && "randomUUID" in crypto
             ? crypto.randomUUID()
-            : `seed-${Date.now()}`,
+            : `seed-${Date.now()}`),
       });
       const started = startGame(created).state;
 
@@ -290,6 +546,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
         mode,
         seats,
         difficulty,
+        seed: seed ?? null,
         state: started,
         selectedCardId: null,
         awaitingHandoff: mode === "PASS_AND_PLAY",
@@ -300,16 +557,38 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
       refresh(started);
     },
 
+    hydrate: () => {
+      if (get().state) return false;
+      const saved = loadSave();
+      if (!saved) return false;
+      set({
+        mode: saved.mode,
+        seats: saved.seats,
+        difficulty: saved.difficulty,
+        state: saved.state,
+        selectedCardId: null,
+        awaitingHandoff: saved.mode === "PASS_AND_PLAY",
+        toasts: [notice("Saved game restored.", "info")],
+        lastMoveSummary: null,
+        lastPlacedCellId: null,
+        botThinking: false,
+      });
+      refresh(saved.state);
+      return true;
+    },
+
     rematch: () => {
-      const { mode, seats, difficulty } = get();
+      const { mode, seats, difficulty, seed } = get();
       if (!mode) return;
-      get().start({ mode, seats, difficulty });
+      get().start({ mode, seats, difficulty, seed: seed ?? undefined });
     },
 
     quit: () => {
       if (botTimer) clearTimeout(botTimer);
+      clearSave();
       set({
         mode: null,
+        seed: null,
         state: null,
         projected: null,
         seats: [],
@@ -317,6 +596,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
         awaitingHandoff: false,
         botThinking: false,
         lastPlacedCellId: null,
+        toasts: [],
       });
     },
 

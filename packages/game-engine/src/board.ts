@@ -256,6 +256,16 @@ export function boardDefinitionIssues(board: BoardDefinition): string[] {
     issues.push("dimensions must be positive integers");
     return issues;
   }
+  // §106: board dimensions are a dangerous modification, not a custom option.
+  if (width !== STANDARD_BOARD_SIZE || height !== STANDARD_BOARD_SIZE) {
+    issues.push(
+      `board must be ${STANDARD_BOARD_SIZE}×${STANDARD_BOARD_SIZE}`,
+    );
+  }
+  if (!Array.isArray(cells)) {
+    issues.push("cells must be an array");
+    return issues;
+  }
 
   const expected = width * height;
   if (cells.length !== expected) {
@@ -273,6 +283,14 @@ export function boardDefinitionIssues(board: BoardDefinition): string[] {
   );
 
   for (const cell of cells) {
+    if (!cell || typeof cell !== "object") {
+      issues.push("invalid cell entry");
+      continue;
+    }
+    if (typeof cell.id !== "string") {
+      issues.push("cell id must be a string");
+      continue;
+    }
     if (seenIds.has(cell.id)) issues.push(`duplicate cell id ${cell.id}`);
     seenIds.add(cell.id);
 
@@ -291,9 +309,13 @@ export function boardDefinitionIssues(board: BoardDefinition): string[] {
       issues.push(`cell ${cell.id} coordinates out of range`);
     }
 
-    const parsed = parseCellId(cell.id);
-    if (parsed.row !== cell.row || parsed.column !== cell.column) {
-      issues.push(`cell id ${cell.id} does not match its coordinates`);
+    try {
+      const parsed = parseCellId(cell.id);
+      if (parsed.row !== cell.row || parsed.column !== cell.column) {
+        issues.push(`cell id ${cell.id} does not match its coordinates`);
+      }
+    } catch {
+      issues.push(`malformed cell id ${cell.id}`);
     }
 
     if (cell.type === "WILD_CORNER") {
@@ -305,6 +327,10 @@ export function boardDefinitionIssues(board: BoardDefinition): string[] {
       cardCells++;
       if (expectedCorners.has(cell.id)) {
         issues.push(`corner ${cell.id} must be a wild corner`);
+      }
+      if (typeof cell.cardCode !== "string") {
+        issues.push(`cell ${cell.id} must have a card identity`);
+        continue;
       }
       if (!isNormalCode(cell.cardCode)) {
         issues.push(`Jack identity ${cell.cardCode} must not appear on the board`);
@@ -330,6 +356,17 @@ export function boardDefinitionIssues(board: BoardDefinition): string[] {
     issues.push(
       `expected ${expectedIdentities} unique card identities, found ${uniqueIdentities}`,
     );
+  }
+  const standardIdentities = new Set(normalCardCodes());
+  for (const code of identityCounts.keys()) {
+    if (!standardIdentities.has(code)) {
+      issues.push(`unknown card identity ${code}`);
+    }
+  }
+  for (const code of standardIdentities) {
+    if (!identityCounts.has(code)) {
+      issues.push(`missing card identity ${code}`);
+    }
   }
   for (const [code, count] of identityCounts) {
     if (count !== 2) {

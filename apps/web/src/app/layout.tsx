@@ -16,11 +16,50 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "QUINTARA — Build the line. Break the plan. Own the board.",
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://quintara.game",
+  ),
+  title: {
+    default: "QUINTARA — Build the line. Break the plan. Own the board.",
+    template: "%s · QUINTARA",
+  },
   description:
     "Quintara is a premium browser-based strategy board game: play solo vs AI, local pass-and-play, or online with friends.",
   applicationName: "QUINTARA",
   manifest: "/manifest.webmanifest",
+  keywords: [
+    "Quintara",
+    "strategy board game",
+    "browser game",
+    "online multiplayer",
+    "pass and play",
+    "card game",
+  ],
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    siteName: "QUINTARA",
+    title: "QUINTARA — Build the line. Break the plan. Own the board.",
+    description:
+      "A premium browser strategy game of cards and position. Play solo, pass-and-play, or online with friends.",
+    url: "/",
+    images: [
+      {
+        url: "/icons/icon-512.png",
+        width: 512,
+        height: 512,
+        alt: "Quintara app icon",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "QUINTARA — Build the line. Break the plan. Own the board.",
+    description:
+      "A premium browser strategy game of cards and position. Play solo, pass-and-play, or online with friends.",
+    images: ["/icons/icon-512.png"],
+  },
+  robots: { index: true, follow: true },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

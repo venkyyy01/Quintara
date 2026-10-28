@@ -46,6 +46,7 @@ export function finishGameWithWinner(
     winnerTeamId: teamId,
     finishedAt,
     pendingSequenceOptions: null,
+    pendingSequenceActionId: null,
   };
   return {
     state: finished,
@@ -79,6 +80,7 @@ export function finishGameStalemate(
     winnerTeamId: null,
     finishedAt,
     pendingSequenceOptions: null,
+    pendingSequenceActionId: null,
   };
   return {
     state: finished,

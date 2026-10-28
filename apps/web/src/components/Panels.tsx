@@ -162,10 +162,12 @@ export function TurnBanner({
   projected,
   viewerId,
   botThinking,
+  turnTimer,
 }: {
   projected: ProjectedState;
   viewerId: string | null;
   botThinking: boolean;
+  turnTimer?: { remainingMs: number; totalMs: number } | null;
 }) {
   const current = projected.players.find((p) => p.isCurrentPlayer);
   const isYours = current?.id === viewerId && viewerId !== null;
@@ -181,6 +183,16 @@ export function TurnBanner({
           : `${current?.name ?? "Opponent"}'s turn`
     : "";
 
+  const remainingSeconds =
+    turnTimer && turnTimer.totalMs > 0
+      ? Math.max(0, Math.ceil(turnTimer.remainingMs / 1000))
+      : null;
+  const timerRatio =
+    turnTimer && turnTimer.totalMs > 0
+      ? Math.max(0, Math.min(1, turnTimer.remainingMs / turnTimer.totalMs))
+      : 0;
+  const timerUrgent = remainingSeconds !== null && remainingSeconds <= 10;
+
   return (
     <div
       className={`flex items-center gap-3 rounded-full px-4 py-2 ${
@@ -188,8 +200,6 @@ export function TurnBanner({
           ? "bg-accent-soft ring-1 ring-[rgba(215,173,98,0.5)]"
           : "bg-white/5"
       }`}
-      role="status"
-      aria-live="polite"
     >
       {current && (
         <TeamBadge teamId={current.teamId} teamName={team?.name ?? ""} size={16} />
@@ -198,9 +208,30 @@ export function TurnBanner({
         className={`text-sm font-bold tracking-wide ${
           isYours ? "text-accent" : "text-text-primary"
         }`}
+        role="status"
+        aria-live="polite"
       >
         {text}
       </span>
+      {remainingSeconds !== null && projected.status === "ACTIVE" && (
+        <span
+          className={`flex items-center gap-1.5 text-xs font-semibold tabular-nums ${
+            timerUrgent ? "text-[var(--color-danger)]" : "text-secondary"
+          }`}
+          aria-hidden="true"
+          title={`${remainingSeconds} seconds left in this turn`}
+        >
+          <span className="relative h-1.5 w-10 overflow-hidden rounded-full bg-white/10">
+            <span
+              className={`absolute inset-y-0 left-0 rounded-full ${
+                timerUrgent ? "bg-[var(--color-danger)]" : "bg-accent"
+              }`}
+              style={{ width: `${Math.round(timerRatio * 100)}%` }}
+            />
+          </span>
+          {remainingSeconds}s
+        </span>
+      )}
     </div>
   );
 }

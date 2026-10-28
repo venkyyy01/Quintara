@@ -214,6 +214,7 @@ export class ScenarioBuilder {
       turnPhase: "AWAITING_MAIN_ACTION",
       deadCardExchangeUsed: false,
       pendingSequenceOptions: null,
+      pendingSequenceActionId: null,
       version: 0,
     };
   }

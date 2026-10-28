@@ -10,6 +10,7 @@ import type { BoardCellDefinition, BoardDefinition, CellId } from "./board.js";
 import type { Card, CardCode, CardId } from "./cards.js";
 import type { LegalActions } from "./actions.js";
 import type { DomainEvent } from "./events.js";
+import { isDeadCard } from "./dead-cards.js";
 import { getLegalActions } from "./legal-actions.js";
 import {
   currentPlayerId,
@@ -44,6 +45,8 @@ export interface ViewerCardInfo {
   readonly code: CardCode;
   readonly rank: string;
   readonly suit: string;
+  /** Both board copies are occupied, so the card cannot be played. */
+  readonly dead: boolean;
 }
 
 export interface ProjectedState {
@@ -147,6 +150,7 @@ export function projectStateForViewer(
         code: card.code,
         rank: card.rank,
         suit: card.suit,
+        dead: isDeadCard(state, card),
       };
     });
   }

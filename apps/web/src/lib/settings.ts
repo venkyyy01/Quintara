@@ -34,6 +34,44 @@ const DEFAULTS: UserSettings = {
   animationSpeed: 1,
 };
 
+function volume(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(1, Math.max(0, value))
+    : fallback;
+}
+
+/** Persisted JSON is untrusted: coerce every field to a valid setting. */
+export function sanitiseSettings(value: unknown): UserSettings {
+  const record =
+    typeof value === "object" && value !== null
+      ? (value as Record<string, unknown>)
+      : {};
+  const animationSpeed =
+    record.animationSpeed === 1 ||
+    record.animationSpeed === 1.5 ||
+    record.animationSpeed === 2
+      ? record.animationSpeed
+      : DEFAULTS.animationSpeed;
+  return {
+    masterVolume: volume(record.masterVolume, DEFAULTS.masterVolume),
+    effectsVolume: volume(record.effectsVolume, DEFAULTS.effectsVolume),
+    musicVolume: volume(record.musicVolume, DEFAULTS.musicVolume),
+    haptics:
+      typeof record.haptics === "boolean" ? record.haptics : DEFAULTS.haptics,
+    showLegalMoves:
+      typeof record.showLegalMoves === "boolean"
+        ? record.showLegalMoves
+        : DEFAULTS.showLegalMoves,
+    reducedMotion:
+      record.reducedMotion === true
+        ? true
+        : record.reducedMotion === false
+          ? false
+          : null,
+    animationSpeed,
+  };
+}
+
 interface SettingsStore extends UserSettings {
   update: (patch: Partial<UserSettings>) => void;
   hydrate: () => void;
@@ -61,32 +99,15 @@ function persist(state: UserSettings): void {
 export const useSettings = create<SettingsStore>((set, get) => ({
   ...DEFAULTS,
   update: (patch) => {
-    set(patch as Partial<SettingsStore>);
-    const {
-      masterVolume,
-      effectsVolume,
-      musicVolume,
-      haptics,
-      showLegalMoves,
-      reducedMotion,
-      animationSpeed,
-    } = get();
-    persist({
-      masterVolume,
-      effectsVolume,
-      musicVolume,
-      haptics,
-      showLegalMoves,
-      reducedMotion,
-      animationSpeed,
-    });
+    const merged = sanitiseSettings({ ...get(), ...patch });
+    set(merged);
+    persist(merged);
   },
   hydrate: () => {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        const parsed = JSON.parse(raw) as Partial<UserSettings>;
-        set({ ...DEFAULTS, ...parsed });
+        set(sanitiseSettings(JSON.parse(raw)));
       }
     } catch {
       // Fall back to defaults.

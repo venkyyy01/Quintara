@@ -10,6 +10,7 @@
 
 import {
   createStandardBoardDefinition,
+  validateBoardDefinition,
   type BoardDefinition,
 } from "./board.js";
 import { createStandardDeck, type Card, type CardId } from "./cards.js";
@@ -50,6 +51,23 @@ export const STANDARD_HAND_SIZE: Readonly<Record<number, number>> = {
 export const STANDARD_PLAYER_COUNTS: readonly number[] = [
   2, 3, 4, 6, 8, 9, 10, 12,
 ];
+
+/** Two 52-card decks: no deal may require more physical cards than this. */
+export const STANDARD_DECK_SIZE = 104;
+
+/**
+ * Sanity cap for custom games (§106). Standard games never require more than
+ * two lines, so ten is already an extreme variant; larger values are far more
+ * likely to be a malformed client payload than an intentional game.
+ */
+export const MAX_REQUIRED_SEQUENCES = 10;
+
+/** Turn timers are product configuration (§56); bound them to sane values. */
+export const MIN_TURN_DURATION_MS = 1_000;
+export const MAX_TURN_DURATION_MS = 60 * 60 * 1_000;
+
+/** Custom overrides must never masquerade as the immutable Standard preset. */
+export const CUSTOM_RULES_VERSION = "quintara-custom-1.0.0";
 
 export function isStandardPlayerCount(count: number): boolean {
   return STANDARD_PLAYER_COUNTS.includes(count);
@@ -161,7 +179,41 @@ const INDIVIDUAL_TEAM_NAMES = ["Blue", "Gold", "Red", "Green"];
  * Dealing happens in {@link startGame} (§21).
  */
 export function createGame(options: CreateGameOptions): GameState {
+  if (!Array.isArray(options.players)) {
+    throw new EngineError(
+      "INVALID_GAME_CONFIG",
+      "players must be an array of player inputs",
+    );
+  }
   const playerCount = options.players.length;
+
+  // Resolve ids up front so generated ids ("player-N") cannot silently
+  // collide with an explicit id supplied by another seat.
+  const playerIds = options.players.map((input, index) => {
+    if (!input || typeof input.name !== "string" || input.name.trim() === "") {
+      throw new EngineError(
+        "INVALID_GAME_CONFIG",
+        `Player ${index + 1} must have a non-empty name`,
+      );
+    }
+    const id = input.id ?? `player-${index + 1}`;
+    if (typeof id !== "string" || id.trim() === "") {
+      throw new EngineError(
+        "INVALID_GAME_CONFIG",
+        `Player ${index + 1} must have a non-empty id`,
+      );
+    }
+    return id;
+  });
+  const duplicateId = playerIds.find(
+    (id, index) => playerIds.indexOf(id) !== index,
+  );
+  if (duplicateId !== undefined) {
+    throw new EngineError(
+      "INVALID_GAME_CONFIG",
+      `Duplicate player id "${duplicateId}"`,
+    );
+  }
 
   let teamSizes: readonly number[];
   if (options.teamSizes) {
@@ -184,6 +236,8 @@ export function createGame(options: CreateGameOptions): GameState {
     handSize: options.handSize,
     requiredSequences: options.requiredSequences,
     maxDeadCardExchangesPerTurn: options.maxDeadCardExchangesPerTurn,
+    turnDurationMs: options.turnDurationMs,
+    allowDeadCardExchange: options.allowDeadCardExchange,
   });
 
   const handSize = options.handSize ?? standardHandSize(playerCount);
@@ -204,10 +258,10 @@ export function createGame(options: CreateGameOptions): GameState {
     const memberIds: PlayerId[] = [];
     for (let i = 0; i < size; i++) {
       const input = options.players[cursor];
-      if (!input) {
+      const playerId = playerIds[cursor];
+      if (!input || playerId === undefined) {
         throw new EngineError("INVALID_GAME_CONFIG", "Not enough players");
       }
-      const playerId = input.id ?? `player-${cursor + 1}`;
       const seat = cursor;
       players.push({ id: playerId, name: input.name, seat, teamId });
       memberIds.push(playerId);
@@ -218,6 +272,7 @@ export function createGame(options: CreateGameOptions): GameState {
 
   const memberGroups = teams.map((t) => [...t.memberIds]);
   const turnOrder = buildTurnOrder(memberGroups);
+  assertNoConsecutiveTeammates(turnOrder, teams);
 
   // Setup-time randomness uses its own deterministic stream seeded by the
   // provided seed so dealing and starting player are reproducible (§20, §22).
@@ -237,7 +292,25 @@ export function createGame(options: CreateGameOptions): GameState {
     discardPiles[player.id] = [];
   }
 
-  const boardDefinition = options.board ?? createStandardBoardDefinition();
+  // A custom board is untrusted input: validate it before any match can be
+  // created (§15) and clone it so later caller mutation cannot desynchronise
+  // boardDefinition from the occupancy map.
+  const boardDefinition = options.board
+    ? cloneBoardDefinition(options.board)
+    : createStandardBoardDefinition();
+  validateBoardDefinition(boardDefinition);
+
+  const isCustomConfig =
+    options.handSize !== undefined || options.requiredSequences !== undefined;
+  const rulesVersion =
+    options.rulesVersion ??
+    (isCustomConfig ? CUSTOM_RULES_VERSION : RULES_VERSION);
+  if (isCustomConfig && rulesVersion === RULES_VERSION) {
+    throw new EngineError(
+      "INVALID_GAME_CONFIG",
+      "Custom overrides require a non-Standard rulesVersion",
+    );
+  }
 
   const rulesConfig: GameRulesConfig = {
     handSize,
@@ -249,7 +322,7 @@ export function createGame(options: CreateGameOptions): GameState {
   const state: GameState = {
     id: options.gameId ?? "game-local",
     rulesConfig,
-    rulesVersion: options.rulesVersion ?? RULES_VERSION,
+    rulesVersion,
     status: "LOBBY",
     resultType: null,
     players,
@@ -275,6 +348,7 @@ export function createGame(options: CreateGameOptions): GameState {
     sequenceCounter: 0,
     deadCardExchangeUsed: false,
     pendingSequenceOptions: null,
+    pendingSequenceActionId: null,
     requiredSequences,
     winnerTeamId: null,
     version: 0,
@@ -298,8 +372,29 @@ function validateGameConfig(input: {
   handSize?: number | undefined;
   requiredSequences?: number | undefined;
   maxDeadCardExchangesPerTurn?: number | undefined;
+  turnDurationMs?: number | null | undefined;
+  allowDeadCardExchange?: boolean | undefined;
 }): void {
   const { playerCount, teamSizes } = input;
+
+  if (playerCount < 2) {
+    throw new EngineError(
+      "INVALID_GAME_CONFIG",
+      "Quintara requires at least 2 players",
+    );
+  }
+  if (!Array.isArray(teamSizes) || teamSizes.length === 0) {
+    throw new EngineError(
+      "INVALID_GAME_CONFIG",
+      "teamSizes must be a non-empty array",
+    );
+  }
+  if (teamSizes.some((s) => !Number.isInteger(s) || s < 1)) {
+    throw new EngineError(
+      "INVALID_GAME_CONFIG",
+      "Team sizes must be positive integers",
+    );
+  }
 
   const teamTotal = teamSizes.reduce((a, b) => a + b, 0);
   if (teamTotal !== playerCount) {
@@ -311,26 +406,35 @@ function validateGameConfig(input: {
   if (teamSizes.length < 2 || teamSizes.length > 3) {
     throw new EngineError(
       "INVALID_GAME_CONFIG",
-      "Standard Quintara supports 2 or 3 competing sides",
-    );
-  }
-  if (teamSizes.some((s) => !Number.isInteger(s) || s < 1)) {
-    throw new EngineError(
-      "INVALID_GAME_CONFIG",
-      "Team sizes must be positive integers",
+      "Quintara supports 2 or 3 competing sides",
     );
   }
 
-  // Reject unsupported Standard counts (§4) unless explicitly overridden by
-  // Custom mode (handSize/requiredSequences provided).
+  // Custom mode is an explicit opt-in via an approved override (§106). A
+  // bare teamSizes value does not silently turn a Standard game into Custom.
   const isCustom =
     input.handSize !== undefined || input.requiredSequences !== undefined;
-  if (!isCustom && !isStandardPlayerCount(playerCount)) {
-    throw new EngineError(
-      "INVALID_GAME_CONFIG",
-      `Unsupported Standard player count ${playerCount} (allowed: ${STANDARD_PLAYER_COUNTS.join(", ")})`,
+  if (!isCustom) {
+    if (!isStandardPlayerCount(playerCount)) {
+      throw new EngineError(
+        "INVALID_GAME_CONFIG",
+        `Unsupported Standard player count ${playerCount} (allowed: ${STANDARD_PLAYER_COUNTS.join(", ")})`,
+      );
+    }
+    const allowed = standardTeamConfigurations(playerCount);
+    const matchesStandard = allowed.some(
+      (config) =>
+        config.length === teamSizes.length &&
+        config.every((size, index) => size === teamSizes[index]),
     );
+    if (!matchesStandard) {
+      throw new EngineError(
+        "INVALID_GAME_CONFIG",
+        `Team configuration [${teamSizes.join(", ")}] is not a Standard configuration for ${playerCount} players`,
+      );
+    }
   }
+
   if (input.handSize !== undefined) {
     if (!Number.isInteger(input.handSize) || input.handSize < 1) {
       throw new EngineError(
@@ -338,15 +442,34 @@ function validateGameConfig(input: {
         "handSize must be a positive integer",
       );
     }
+    if (input.handSize * playerCount > STANDARD_DECK_SIZE) {
+      throw new EngineError(
+        "INVALID_GAME_CONFIG",
+        `Dealing ${input.handSize} cards to ${playerCount} players requires ${
+          input.handSize * playerCount
+        } cards, but only ${STANDARD_DECK_SIZE} exist`,
+      );
+    }
   }
+
   if (input.requiredSequences !== undefined) {
-    if (!Number.isInteger(input.requiredSequences) || input.requiredSequences < 1) {
+    if (
+      !Number.isInteger(input.requiredSequences) ||
+      input.requiredSequences < 1
+    ) {
       throw new EngineError(
         "INVALID_GAME_CONFIG",
         "requiredSequences must be a positive integer",
       );
     }
+    if (input.requiredSequences > MAX_REQUIRED_SEQUENCES) {
+      throw new EngineError(
+        "INVALID_GAME_CONFIG",
+        `requiredSequences must not exceed ${MAX_REQUIRED_SEQUENCES}`,
+      );
+    }
   }
+
   // §29 is an invariant, not a tunable: the engine enforces at most one
   // dead-card exchange per turn (single-use flag). Any other value would be
   // silently ignored, so reject it at configuration time instead.
@@ -359,12 +482,63 @@ function validateGameConfig(input: {
       "§29 allows at most one dead-card exchange per turn; maxDeadCardExchangesPerTurn must be 1",
     );
   }
-  if (playerCount < 2) {
+
+  if (
+    input.allowDeadCardExchange !== undefined &&
+    typeof input.allowDeadCardExchange !== "boolean"
+  ) {
     throw new EngineError(
       "INVALID_GAME_CONFIG",
-      "Quintara requires at least 2 players",
+      "allowDeadCardExchange must be a boolean",
     );
   }
+
+  if (input.turnDurationMs !== undefined && input.turnDurationMs !== null) {
+    if (
+      !Number.isInteger(input.turnDurationMs) ||
+      input.turnDurationMs < MIN_TURN_DURATION_MS ||
+      input.turnDurationMs > MAX_TURN_DURATION_MS
+    ) {
+      throw new EngineError(
+        "INVALID_GAME_CONFIG",
+        `turnDurationMs must be null or an integer between ${MIN_TURN_DURATION_MS} and ${MAX_TURN_DURATION_MS}`,
+      );
+    }
+  }
+}
+
+/**
+ * §7 requires interleaved seats. A malformed/uneven custom team layout can
+ * still produce adjacent teammates (e.g. [1, 2] → A1 B1 B2); reject it rather
+ * than shipping a game that gives one side two turns in a row.
+ */
+function assertNoConsecutiveTeammates(
+  turnOrder: readonly PlayerId[],
+  teams: readonly TeamState[],
+): void {
+  const teamOf = new Map<PlayerId, TeamId>();
+  for (const team of teams) {
+    for (const playerId of team.memberIds) {
+      teamOf.set(playerId, team.id);
+    }
+  }
+  for (let i = 1; i < turnOrder.length; i++) {
+    const previous = teamOf.get(turnOrder[i - 1] as PlayerId);
+    const current = teamOf.get(turnOrder[i] as PlayerId);
+    if (previous !== undefined && previous === current) {
+      throw new EngineError(
+        "INVALID_GAME_CONFIG",
+        "Team configuration would place teammates consecutively in the turn order",
+      );
+    }
+  }
+}
+
+function cloneBoardDefinition(board: BoardDefinition): BoardDefinition {
+  return {
+    ...board,
+    cells: board.cells.map((cell) => ({ ...cell })),
+  };
 }
 
 function buildEmptyOccupancy(

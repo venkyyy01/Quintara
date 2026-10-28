@@ -21,6 +21,11 @@ export {
   buildTurnOrder,
   STANDARD_HAND_SIZE,
   STANDARD_PLAYER_COUNTS,
+  STANDARD_DECK_SIZE,
+  MAX_REQUIRED_SEQUENCES,
+  MIN_TURN_DURATION_MS,
+  MAX_TURN_DURATION_MS,
+  CUSTOM_RULES_VERSION,
   type CreateGameOptions,
   type CreateGamePlayerInput,
 } from "./setup.js";
@@ -208,20 +213,36 @@ import {
 import type { DomainEvent } from "./events.js";
 import type { GameState } from "./state.js";
 
+export interface ReplayOptions extends CommandOptions {
+  /**
+   * Terminal timestamp recorded in the original event stream. Supplying it
+   * makes `finishedAt` byte-exact; omitting it uses the deterministic game
+   * creation timestamp rather than the wall clock.
+   */
+  readonly finishedAt?: string;
+}
+
 /**
  * Deterministically replays a recorded command stream from an initial state
  * (§102 REPLAY: initial state + complete command/event stream + RNG
  * information reproduces the game exactly).
+ *
+ * Replay never reads the wall clock: pass `finishedAt` from the recorded
+ * GAME_WON/GAME_STALEMATED event to reproduce terminal metadata exactly.
  */
 export function replayCommands(
   initialState: GameState,
   commands: readonly GameCommand[],
-  options?: CommandOptions,
+  options?: ReplayOptions,
 ): EngineResult {
+  const replayOptions: CommandOptions = {
+    ...options,
+    now: options?.now ?? (() => options?.finishedAt ?? initialState.createdAt),
+  };
   let state = initialState;
   const events: DomainEvent[] = [];
   for (const command of commands) {
-    const result = applyCommand(state, command, options);
+    const result = applyCommand(state, command, replayOptions);
     state = result.state;
     events.push(...result.events);
   }

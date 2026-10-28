@@ -9,10 +9,12 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
   applyCommand,
+  cellId,
   currentPlayerId,
   engineErrorMessage,
   EngineError,
   projectStateForViewer,
+  resolveSequenceSelectionDefault,
   scenario,
   type GameCommand,
   type GameState,
@@ -33,6 +35,51 @@ function coords(state: GameState, code: string) {
     (c) => c.type === "CARD" && c.cardCode === code,
   )!;
   return { row: cell.row, column: cell.column };
+}
+
+function allCoords(state: GameState, code: string) {
+  return state.boardDefinition.cells
+    .filter((c) => c.type === "CARD" && c.cardCode === code)
+    .map((c) => ({ row: c.row, column: c.column }));
+}
+
+/**
+ * Builds a state where Red has already completed a line, so those markers are
+ * protected. The completion is produced by a real engine command rather than
+ * by hand-writing sequence metadata.
+ */
+function buildProtectedLineState(): GameState {
+  const base = scenario()
+    .withCurrentPlayer("B")
+    .withHand("B", ["5H"])
+    .withHand("A", ["JH"])
+    .withMarker("B", 2, 3)
+    .withMarker("B", 2, 4)
+    .withMarker("B", 2, 5)
+    .withMarker("B", 2, 6)
+    .withMarker("B", 7, 7)
+    .build();
+  const target = coords(base, "5H");
+  const cardId = base.hands["p-B"]?.[0];
+  if (!cardId) throw new Error("Tutorial setup is missing Red's card");
+  const played = applyCommand(base, {
+    type: "PLAY_NORMAL_CARD",
+    playerId: "p-B",
+    actionId: "tutorial-protected-setup",
+    expectedVersion: base.version,
+    cardId,
+    targetCellId: cellId(target.row, target.column),
+  }).state;
+  if (played.turnPhase !== "AWAITING_SEQUENCE_SELECTION") return played;
+  return applyCommand(played, {
+    type: "SELECT_SEQUENCE_SET",
+    playerId: "p-B",
+    actionId: "tutorial-protected-select",
+    expectedVersion: played.version,
+    sequenceCellSets: resolveSequenceSelectionDefault(played).map((s) => [
+      ...s.cells,
+    ]),
+  }).state;
 }
 
 const LESSONS: Lesson[] = [
@@ -64,7 +111,12 @@ const LESSONS: Lesson[] = [
     },
     isComplete: (before, command) => {
       if (command.type !== "PLAY_NORMAL_CARD") return false;
-      return command.cardId.includes("8H") || command.targetCellId.length > 0;
+      const open = allCoords(before, "8H").filter(
+        (c) => !before.board.cells[cellId(c.row, c.column)]?.occupantTeamId,
+      );
+      return open.some(
+        (c) => cellId(c.row, c.column) === command.targetCellId,
+      );
     },
   },
   {
@@ -129,18 +181,7 @@ const LESSONS: Lesson[] = [
     title: "Protected lines",
     instruction:
       "The opponent completed a line — its markers are protected. Try tapping a protected marker: the game will refuse. Then remove the free red marker instead.",
-    build: () =>
-      scenario()
-        .withCurrentPlayer("A")
-        .withHand("A", ["JH"])
-        .withHand("B", ["2C"])
-        .withMarker("B", 5, 1)
-        .withMarker("B", 5, 2)
-        .withMarker("B", 5, 3)
-        .withMarker("B", 5, 4)
-        .withMarker("B", 5, 5)
-        .withMarker("B", 7, 7)
-        .build(),
+    build: () => buildProtectedLineState(),
     isComplete: (_b, command) =>
       command.type === "PLAY_REMOVE_JACK" && command.targetCellId === "r7c7",
   },
@@ -150,13 +191,15 @@ const LESSONS: Lesson[] = [
       "Both 8♥ spaces are occupied — the card is dead. Tap Exchange to swap it for a fresh card (once per turn), then play on.",
     build: () => {
       const pre = scenario().build();
-      const a = coords(pre, "8H");
+      const copies = allCoords(pre, "8H");
+      const first = copies[0]!;
+      const second = copies[1]!;
       return scenario()
         .withCurrentPlayer("A")
         .withHand("A", ["8H"])
         .withHand("B", ["2C"])
-        .withMarker("A", a.row, a.column)
-        .withMarker("B", a.row === 5 ? 6 : 5, a.column === 5 ? 6 : 5)
+        .withMarker("A", first.row, first.column)
+        .withMarker("B", second.row, second.column)
         .build();
     },
     isComplete: (_b, command) => command.type === "EXCHANGE_DEAD_CARD",
@@ -272,7 +315,18 @@ export default function TutorialPage() {
     const action = (projected.legalActions?.mainActions ?? []).find(
       (a) => a.targetCellId === cellId && (!selectedCardId || a.cardId === selectedCardId),
     );
-    if (!action) return;
+    if (!action) {
+      if ((projected.sequenceMembership[cellId]?.length ?? 0) > 0) {
+        setFeedback(
+          "That marker is protected by a completed line — the game refuses to remove it.",
+        );
+      } else if (projected.boardCells[cellId]?.occupantTeamId) {
+        setFeedback("That space is occupied. Pick a highlighted space.");
+      } else if (selectedCardId) {
+        setFeedback("That card cannot be played on this space.");
+      }
+      return;
+    }
     perform({
       type: action.type,
       playerId: currentPlayerId(state)!,

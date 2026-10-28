@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
   boardDefinitionIssues,
+  createGame,
   createStandardBoardDefinition,
   isJackCode,
   validateBoardDefinition,
@@ -94,6 +95,24 @@ describe("standard board definition", () => {
     };
     expect(boardDefinitionIssues(broken).length).toBeGreaterThan(0);
     expect(() => validateBoardDefinition(broken)).toThrow();
+  });
+
+  it("createGame rejects wrong dimensions and clones injected boards", () => {
+    const players = [{ name: "A" }, { name: "B" }];
+    const board = createStandardBoardDefinition();
+    const state = createGame({ players, board });
+
+    // The game owns a deep copy: caller mutation cannot desynchronise it.
+    expect(state.boardDefinition.cells[0]).not.toBe(board.cells[0]);
+    (board.cells[0] as { row: number }).row = 99;
+    expect(state.boardDefinition.cells[0]?.row).toBe(0);
+
+    expect(() =>
+      createGame({
+        players,
+        board: { ...board, width: 9, height: 9 },
+      }),
+    ).toThrow(/10×10/);
   });
 
   it("rejects a board with a Jack identity (§15)", () => {

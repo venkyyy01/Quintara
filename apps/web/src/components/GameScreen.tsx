@@ -34,6 +34,12 @@ export interface HandoffState {
   onReady: () => void;
 }
 
+export interface GameNotice {
+  id: string | number;
+  message: string;
+  tone: "info" | "error" | "success";
+}
+
 export interface GameScreenProps {
   projected: ProjectedState;
   /** Authoritative state for local dead-card derivation; null online. */
@@ -49,13 +55,19 @@ export interface GameScreenProps {
     onUseDefault: () => void;
   } | null;
   connectionLabel?: string | null;
+  notices?: readonly GameNotice[];
+  onDismissNotice?: (id: string | number) => void;
+  /** Online rooms: viewers who are not the host see a waiting state instead. */
+  hideRematch?: boolean;
+  /** Pass-and-play: show the winning side, not viewer-relative defeat. */
+  neutralResult?: boolean;
+  /** Online turn countdown, when the room enforces a timer. */
+  turnTimer?: { remainingMs: number; totalMs: number } | null;
   onSelectCard: (cardId: string) => void;
   onCellClick: (cellId: CellId) => void;
   onExchange: (cardId: string) => void;
   onRematch: () => void;
   onQuit: () => void;
-  /** Online rooms: viewers who are not the host see a waiting state instead. */
-  hideRematch?: boolean;
   selectedCardId: string | null;
 }
 
@@ -70,7 +82,10 @@ export function GameScreen(props: GameScreenProps) {
     handoff,
     sequenceSelection,
     connectionLabel,
+    notices = [],
     hideRematch,
+    neutralResult,
+    turnTimer,
     selectedCardId,
   } = props;
 
@@ -115,15 +130,34 @@ export function GameScreen(props: GameScreenProps) {
     viewerId !== null &&
     projected.players.find((p) => p.id === viewerId)?.isCurrentPlayer === true;
 
+  const selectedCard = selectedCardId
+    ? projected.hand?.find((card) => card.id === selectedCardId)
+    : null;
+  const legalTargetCount = legalTargets.size + removableTargets.size;
+  const selectionAnnouncement = selectedCard
+    ? `${selectedCard.rank}${selectedCard.suit} selected. ${legalTargetCount} legal ${legalTargetCount === 1 ? "space" : "spaces"}.`
+    : viewerIsActing
+      ? "Select a card from your hand."
+      : "";
+
   return (
     <div
       className="mx-auto flex min-h-[100dvh] w-full max-w-[1500px] flex-col px-3 pb-2 pt-[calc(var(--safe-top)+0.6rem)] sm:px-5"
       id="__next_root"
     >
+      <div
+        className="flex flex-1 flex-col"
+        inert={handoff.pending || settingsOpen || projected.status === "FINISHED"}
+        aria-hidden={
+          handoff.pending || settingsOpen || projected.status === "FINISHED"
+            ? true
+            : undefined
+        }
+      >
       {/* Top status bar (§35) */}
-      <header className="flex items-center gap-3 py-2">
+      <header className="flex flex-wrap items-center gap-2 py-2 sm:gap-3">
         <span
-          className="text-lg font-bold tracking-[0.22em]"
+          className="shrink-0 text-base font-bold tracking-[0.16em] sm:text-lg sm:tracking-[0.22em]"
           style={{
             background: "linear-gradient(180deg, #f6d99a, var(--color-accent))",
             WebkitBackgroundClip: "text",
@@ -132,19 +166,23 @@ export function GameScreen(props: GameScreenProps) {
         >
           QUINTARA
         </span>
-        <div className="flex-1" />
-        <TurnBanner
-          projected={projected}
-          viewerId={viewerId}
-          botThinking={botThinking}
-        />
+        <div className="hidden flex-1 sm:block" />
+        <div className="order-3 ml-auto min-w-0 sm:order-none">
+          <TurnBanner
+            projected={projected}
+            viewerId={viewerId}
+            botThinking={botThinking}
+            turnTimer={turnTimer}
+          />
+        </div>
         <button
           type="button"
-          className="btn btn-ghost px-3 py-2 text-sm"
+          className="btn btn-ghost shrink-0 px-2.5 py-2 text-sm sm:px-3"
           onClick={() => setSettingsOpen(true)}
           aria-label="Open settings"
         >
-          ⚙ Settings
+          <span aria-hidden>⚙</span>
+          <span className="hidden sm:inline">Settings</span>
         </button>
       </header>
 
@@ -153,6 +191,10 @@ export function GameScreen(props: GameScreenProps) {
           {connectionLabel}
         </div>
       )}
+
+      <p className="sr-only" role="status" aria-live="polite">
+        {selectionAnnouncement}
+      </p>
 
       {/* Main area — responsive columns (§35–§38) */}
       <main className="grid flex-1 items-start gap-4 pb-3 lg:grid-cols-[260px_minmax(0,1fr)_280px]">
@@ -224,6 +266,40 @@ export function GameScreen(props: GameScreenProps) {
           />
         </div>
       </footer>
+      </div>
+
+      {notices.length > 0 && (
+        <div
+          className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--safe-bottom)+5.5rem)] z-40 flex flex-col items-center gap-2 px-4"
+          aria-live="polite"
+        >
+          {notices.map((notice) => (
+            <div
+              key={notice.id}
+              role={notice.tone === "error" ? "alert" : "status"}
+              className={`toast pointer-events-auto flex w-full max-w-md items-center justify-between gap-3 ${
+                notice.tone === "error"
+                  ? "border-[var(--color-danger)]"
+                  : notice.tone === "success"
+                    ? "border-[var(--color-success)]"
+                    : ""
+              }`}
+            >
+              <span>{notice.message}</span>
+              {props.onDismissNotice && (
+                <button
+                  type="button"
+                  className="btn btn-ghost shrink-0 px-2 py-1 text-xs"
+                  onClick={() => props.onDismissNotice?.(notice.id)}
+                  aria-label="Dismiss message"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Overlays */}
       {handoff.pending && projected.status === "ACTIVE" && (
@@ -240,6 +316,7 @@ export function GameScreen(props: GameScreenProps) {
           onRematch={props.onRematch}
           onQuit={props.onQuit}
           hideRematch={hideRematch === true}
+          neutralResult={neutralResult}
         />
       )}
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}

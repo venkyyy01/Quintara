@@ -48,6 +48,8 @@ export interface OnlineGameState {
     playerCount: number;
     aiSeats: number;
     aiDifficulty: string;
+    password?: string;
+    turnDurationMs?: number | null;
   }) => void;
   joinRoom: (roomCode: string, password?: string) => void;
   quickMatch: () => void;
@@ -125,6 +127,7 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
           version: message.state.version,
           phase: "PLAYING",
           lastPlacedCellId: null,
+          errorMessage: null,
           ...(selected !== null && !stillPlayable
             ? { selectedCardId: null }
             : {}),
@@ -181,6 +184,8 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
                 ? engineErrorMessage(code)
                 : "That move was rejected.",
           });
+        } else {
+          set({ errorMessage: null });
         }
         break;
 
@@ -264,7 +269,13 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
       socket = null;
     },
 
-    createRoom: ({ playerCount, aiSeats, aiDifficulty }) => {
+    createRoom: ({
+      playerCount,
+      aiSeats,
+      aiDifficulty,
+      password,
+      turnDurationMs,
+    }) => {
       send({
         type: "CREATE_ROOM",
         requestId: request(),
@@ -274,6 +285,8 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
           aiSeats,
           aiDifficulty: aiDifficulty as never,
           isPublic: false,
+          ...(password ? { password } : {}),
+          ...(turnDurationMs ? { turnDurationMs } : {}),
         },
       });
     },

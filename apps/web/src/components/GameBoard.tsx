@@ -8,7 +8,13 @@
 
 "use client";
 
-import { useMemo } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   cardLabel,
@@ -41,6 +47,71 @@ export function GameBoard({
 }: GameBoardProps) {
   const reduced = useReducedMotion();
   const selecting = selectedCardId !== null;
+  const cellRefs = useRef(new Map<CellId, HTMLButtonElement>());
+  const [focusedCellId, setFocusedCellId] = useState<CellId>("r0c0");
+
+  // Roving tabindex: when a card is selected, Tab lands on the first legal
+  // target instead of forcing keyboard users through up to 100 cells.
+  useEffect(() => {
+    if (!selecting || legalTargets.size === 0) return;
+    const first = projected.boardDefinition.cells.find((cell) =>
+      legalTargets.has(cell.id),
+    );
+    if (first) setFocusedCellId(first.id);
+  }, [selecting, legalTargets, projected.boardDefinition.cells]);
+
+  useEffect(() => {
+    // Keep the roving tab stop on a cell that still exists.
+    if (!projected.boardDefinition.cells.some((cell) => cell.id === focusedCellId)) {
+      setFocusedCellId("r0c0");
+    }
+  }, [focusedCellId, projected.boardDefinition.cells]);
+
+  function moveFocus(row: number, column: number): void {
+    const next = `r${row}c${column}`;
+    const target = cellRefs.current.get(next);
+    if (!target) return;
+    setFocusedCellId(next);
+    target.focus();
+  }
+
+  const lastRow = projected.boardDefinition.height - 1;
+  const lastColumn = projected.boardDefinition.width - 1;
+
+  function onCellKeyDown(
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    row: number,
+    column: number,
+  ): void {
+    switch (event.key) {
+      case "ArrowUp":
+        event.preventDefault();
+        moveFocus(Math.max(0, row - 1), column);
+        break;
+      case "ArrowDown":
+        event.preventDefault();
+        moveFocus(Math.min(lastRow, row + 1), column);
+        break;
+      case "ArrowLeft":
+        event.preventDefault();
+        moveFocus(row, Math.max(0, column - 1));
+        break;
+      case "ArrowRight":
+        event.preventDefault();
+        moveFocus(row, Math.min(lastColumn, column + 1));
+        break;
+      case "Home":
+        event.preventDefault();
+        moveFocus(row, 0);
+        break;
+      case "End":
+        event.preventDefault();
+        moveFocus(row, lastColumn);
+        break;
+      default:
+        break;
+    }
+  }
 
   const protectedCells = useMemo(() => {
     const set = new Set<CellId>();
@@ -52,81 +123,118 @@ export function GameBoard({
     return set;
   }, [projected.sequenceMembership]);
 
+  const rows = Array.from(
+    { length: projected.boardDefinition.height },
+    (_, row) =>
+      projected.boardDefinition.cells.filter((cell) => cell.row === row),
+  );
+
   return (
     <div className="board-surface w-full">
-      <div className="board-grid" role="grid" aria-label="Quintara game board">
-        {projected.boardDefinition.cells.map((cell) => {
-          const occupancy = projected.boardCells[cell.id];
-          const occupantTeamId = occupancy?.occupantTeamId ?? null;
-          const isWild = cell.type === "WILD_CORNER";
-          const isLegal = legalTargets.has(cell.id);
-          const isRemovable = removableTargets.has(cell.id);
-          const isProtected = protectedCells.has(cell.id);
+      <p id="board-instructions" className="sr-only">
+        Quintara board. Use the arrow keys to move between cells, Home and End
+        to jump across a row, and Enter or Space to play on a highlighted
+        target. Only highlighted cells accept a move.
+      </p>
+      <div
+        className="board-grid"
+        role="grid"
+        aria-label="Quintara game board"
+        aria-describedby="board-instructions"
+        aria-rowcount={projected.boardDefinition.height}
+        aria-colcount={projected.boardDefinition.width}
+      >
+        {rows.map((rowCells) => (
+          <div key={rowCells[0]?.row ?? 0} role="row" className="board-row">
+            {rowCells.map((cell) => {
+              const occupancy = projected.boardCells[cell.id];
+              const occupantTeamId = occupancy?.occupantTeamId ?? null;
+              const isWild = cell.type === "WILD_CORNER";
+              const isLegal = legalTargets.has(cell.id);
+              const isRemovable = removableTargets.has(cell.id);
+              const isProtected = protectedCells.has(cell.id);
 
-          const dimmed =
-            selecting && showLegalMoves && !isLegal && !isRemovable;
-          const classes = [
-            "board-cell",
-            isWild ? "is-wild" : "",
-            showLegalMoves && isLegal ? "is-legal" : "",
-            showLegalMoves && isRemovable ? "is-targetable" : "",
-            dimmed ? "is-dimmed" : "",
-          ]
-            .filter(Boolean)
-            .join(" ");
+              const dimmed =
+                selecting && showLegalMoves && !isLegal && !isRemovable;
+              const classes = [
+                "board-cell",
+                isWild ? "is-wild" : "",
+                showLegalMoves && isLegal ? "is-legal" : "",
+                showLegalMoves && isRemovable ? "is-targetable" : "",
+                dimmed ? "is-dimmed" : "",
+              ]
+                .filter(Boolean)
+                .join(" ");
 
-          const label =
-            cell.type === "WILD_CORNER"
-              ? `Row ${cell.row + 1} column ${cell.column + 1}. Wild corner.`
-              : `Row ${cell.row + 1} column ${cell.column + 1}. ${cardLabel(cell.cardCode)}.${occupantTeamId ? ` Occupied by ${teamName(projected, occupantTeamId)}.` : " Open."}${isProtected ? " Protected sequence marker." : ""}`;
+              const actionHint = isLegal
+                ? " Legal move."
+                : isRemovable
+                  ? " You can remove this marker."
+                  : "";
+              const label =
+                cell.type === "WILD_CORNER"
+                  ? `Row ${cell.row + 1} column ${cell.column + 1}. Wild corner.${actionHint}`
+                  : `Row ${cell.row + 1} column ${cell.column + 1}. ${cardLabel(cell.cardCode)}.${occupantTeamId ? ` Occupied by ${teamName(projected, occupantTeamId)}.` : " Open."}${isProtected ? " Protected sequence marker." : ""}${actionHint}`;
 
-          return (
-            <button
-              key={cell.id}
-              type="button"
-              role="gridcell"
-              className={classes}
-              aria-label={label}
-              onClick={() => {
-                if (isLegal || isRemovable) onCellClick(cell.id);
-              }}
-              disabled={!isLegal && !isRemovable}
-              style={{
-                cursor: isLegal || isRemovable ? "pointer" : "default",
-                opacity: dimmed ? 0.38 : 1,
-              }}
-              // Valid targets stay tappable; the highlight is only guidance.
-            >
-              {cell.type === "CARD" ? (
-                <CardFace
-                  rank={cell.cardCode.slice(0, -1)}
-                  suit={cell.cardCode.slice(-1)}
-                />
-              ) : (
-                <WildCornerGlyph />
-              )}
-
-              {occupantTeamId && (
-                <TeamMarker
-                  teamId={occupantTeamId}
-                  teamName={teamName(projected, occupantTeamId)}
-                  isNew={lastPlacedCellId === cell.id && !reduced}
-                  animationSpeed={animationSpeed}
-                  compact
-                />
-              )}
-
-              {isProtected && occupantTeamId && (
-                <span
-                  className="sequence-trace"
-                  style={{
-                    boxShadow: `inset 0 0 0 2px ${teamVisual(occupantTeamId).ringColor}cc`,
+              return (
+                <button
+                  key={cell.id}
+                  ref={(node) => {
+                    if (node) cellRefs.current.set(cell.id, node);
+                    else cellRefs.current.delete(cell.id);
                   }}
-                />
-              )}
-            </button>
-          );
-        })}
+                  type="button"
+                  role="gridcell"
+                  aria-rowindex={cell.row + 1}
+                  aria-colindex={cell.column + 1}
+                  aria-label={label}
+                  aria-disabled={!isLegal && !isRemovable}
+                  tabIndex={focusedCellId === cell.id ? 0 : -1}
+                  className={classes}
+                  onFocus={() => setFocusedCellId(cell.id)}
+                  onKeyDown={(event) =>
+                    onCellKeyDown(event, cell.row, cell.column)
+                  }
+                  onClick={() => {
+                    if (isLegal || isRemovable) onCellClick(cell.id);
+                  }}
+                  style={{
+                    cursor: isLegal || isRemovable ? "pointer" : "default",
+                    opacity: dimmed ? 0.38 : 1,
+                  }}
+                >
+                  {cell.type === "CARD" ? (
+                    <CardFace
+                      rank={cell.cardCode.slice(0, -1)}
+                      suit={cell.cardCode.slice(-1)}
+                    />
+                  ) : (
+                    <WildCornerGlyph />
+                  )}
+
+                  {occupantTeamId && (
+                    <TeamMarker
+                      teamId={occupantTeamId}
+                      teamName={teamName(projected, occupantTeamId)}
+                      isNew={lastPlacedCellId === cell.id && !reduced}
+                      animationSpeed={animationSpeed}
+                      compact
+                    />
+                  )}
+
+                  {isProtected && occupantTeamId && (
+                    <span
+                      className="sequence-trace"
+                      style={{
+                        boxShadow: `inset 0 0 0 2px ${teamVisual(occupantTeamId).ringColor}cc`,
+                      }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </div>
     </div>
   );

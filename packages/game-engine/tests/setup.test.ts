@@ -6,11 +6,15 @@ import { describe, expect, it } from "vitest";
 import {
   buildTurnOrder,
   createGame,
+  CUSTOM_RULES_VERSION,
   isStandardPlayerCount,
+  RULES_VERSION,
   standardHandSize,
   standardRequiredSequences,
+  standardTeamConfigurations,
   startGame,
   STANDARD_HAND_SIZE,
+  STANDARD_PLAYER_COUNTS,
   validateGameState,
   type CreateGamePlayerInput,
 } from "../src/index.js";
@@ -163,6 +167,127 @@ describe("team turn order (§7, §114)", () => {
   });
 });
 
+describe("configuration validation (§4–§8, §106)", () => {
+  it("rejects non-Standard team configurations even at a Standard player count", () => {
+    expect(() =>
+      createGame({ players: players(3), teamSizes: [1, 2] }),
+    ).toThrow(/not a Standard configuration/);
+    expect(() =>
+      createGame({ players: players(4), teamSizes: [1, 3] }),
+    ).toThrow(/not a Standard configuration/);
+  });
+
+  it("rejects custom team layouts that seat teammates consecutively", () => {
+    // [1, 4] interleaves as A1 B1 B2 B3 B4 — illegal under §7.
+    expect(() =>
+      createGame({ players: players(5), teamSizes: [1, 4], handSize: 6 }),
+    ).toThrow(/consecutively/);
+  });
+
+  it("accepts an interleaved custom team layout", () => {
+    const state = createGame({
+      players: players(5),
+      teamSizes: [3, 2],
+      handSize: 6,
+    });
+    expect(state.turnOrder).toEqual([
+      "player-1",
+      "player-4",
+      "player-2",
+      "player-5",
+      "player-3",
+    ]);
+  });
+
+  it("rejects duplicate explicit ids and generated collisions", () => {
+    expect(() =>
+      createGame({
+        players: [
+          { id: "same", name: "A" },
+          { id: "same", name: "B" },
+        ],
+      }),
+    ).toThrow(/Duplicate player id/);
+    expect(() =>
+      createGame({
+        players: [{ id: "player-2", name: "A" }, { name: "B" }],
+      }),
+    ).toThrow(/Duplicate player id/);
+  });
+
+  it("rejects empty player names and ids", () => {
+    expect(() =>
+      createGame({ players: [{ name: "A" }, { name: "   " }] }),
+    ).toThrow(/non-empty name/);
+    expect(() =>
+      createGame({ players: [{ id: "", name: "A" }, { name: "B" }] }),
+    ).toThrow(/non-empty id/);
+  });
+
+  it("rejects a deal larger than the physical deck", () => {
+    expect(() =>
+      createGame({ players: players(2), handSize: 53 }),
+    ).toThrow(/only 104 exist/);
+    expect(() =>
+      createGame({ players: players(12), handSize: 20 }),
+    ).toThrow(/only 104 exist/);
+    expect(() =>
+      createGame({ players: players(2), handSize: 52 }),
+    ).not.toThrow();
+  });
+
+  it("bounds requiredSequences", () => {
+    expect(() =>
+      createGame({ players: players(2), requiredSequences: 0 }),
+    ).toThrow(/positive integer/);
+    expect(() =>
+      createGame({ players: players(2), requiredSequences: 11 }),
+    ).toThrow(/must not exceed 10/);
+    expect(() =>
+      createGame({ players: players(2), requiredSequences: 3 }),
+    ).not.toThrow();
+  });
+
+  it("bounds turn timers", () => {
+    for (const value of [0, -1, 999, 1.5, Number.NaN, Infinity, 3_600_001]) {
+      expect(() =>
+        createGame({ players: players(2), turnDurationMs: value }),
+      ).toThrow(/turnDurationMs/);
+    }
+    expect(() =>
+      createGame({ players: players(2), turnDurationMs: 1_000 }),
+    ).not.toThrow();
+    expect(() =>
+      createGame({ players: players(2), turnDurationMs: null }),
+    ).not.toThrow();
+  });
+
+  it("labels Standard and custom rules separately", () => {
+    const standard = createGame({ players: players(4) });
+    expect(standard.rulesVersion).toBe(RULES_VERSION);
+
+    const custom = createGame({ players: players(4), handSize: 7 });
+    expect(custom.rulesVersion).toBe(CUSTOM_RULES_VERSION);
+    expect(() =>
+      createGame({
+        players: players(4),
+        handSize: 7,
+        rulesVersion: RULES_VERSION,
+      }),
+    ).toThrow(/non-Standard rulesVersion/);
+  });
+
+  it("rejects a non-boolean dead-card exchange flag", () => {
+    expect(() =>
+      createGame({
+        players: players(2),
+        // Deliberately malformed client input.
+        allowDeadCardExchange: "yes" as unknown as boolean,
+      }),
+    ).toThrow(/boolean/);
+  });
+});
+
 describe("dealing and game start (§21–§22)", () => {
   it("creates LOBBY, starts ACTIVE with correct hand sizes", () => {
     const created = createGame({ players: players(4), seed: "deal-test" });
@@ -214,6 +339,62 @@ describe("dealing and game start (§21–§22)", () => {
       ).state;
       expect(validateGameState(state)).toEqual([]);
     }
+  });
+
+  it("deals every Standard player count/configuration exactly", () => {
+    for (const playerCount of STANDARD_PLAYER_COUNTS) {
+      for (const teamSizes of standardTeamConfigurations(playerCount)) {
+        const state = startGame(
+          createGame({
+            players: players(playerCount),
+            teamSizes,
+            seed: `deal-${playerCount}-${teamSizes.join("-")}`,
+          }),
+        ).state;
+
+        const handSize = standardHandSize(playerCount);
+        const dealt = Object.values(state.hands).flat();
+        expect(dealt).toHaveLength(handSize * playerCount);
+        expect(state.drawPile).toHaveLength(
+          104 - handSize * playerCount,
+        );
+        expect(new Set(dealt).size).toBe(dealt.length);
+        expect(
+          Object.values(state.hands).every((hand) => hand.length === handSize),
+        ).toBe(true);
+        expect(validateGameState(state)).toEqual([]);
+      }
+    }
+  });
+
+  it("accepts uneven custom layouts only when the turn order interleaves", () => {
+    const accepted = startGame(
+      createGame({
+        players: players(5),
+        teamSizes: [3, 2],
+        handSize: 6,
+      }),
+    ).state;
+    expect(accepted.teams.map((team) => team.memberIds.length)).toEqual([3, 2]);
+    expect(validateGameState(accepted)).toEqual([]);
+
+    expect(() =>
+      createGame({ players: players(5), teamSizes: [2, 3], handSize: 6 }),
+    ).toThrow(/consecutively/);
+
+    const threeSides = startGame(
+      createGame({
+        players: players(8),
+        teamSizes: [3, 3, 2],
+        handSize: 5,
+      }),
+    ).state;
+    expect(threeSides.teams).toHaveLength(3);
+    expect(validateGameState(threeSides)).toEqual([]);
+
+    expect(() =>
+      createGame({ players: players(7), teamSizes: [2, 2, 3], handSize: 5 }),
+    ).toThrow(/consecutively/);
   });
 
   it("refuses to start twice", () => {

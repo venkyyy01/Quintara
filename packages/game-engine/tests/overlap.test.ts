@@ -69,6 +69,25 @@ describe("maximum compatible set resolution (§64–§66, §110)", () => {
     expect(sets[0]).toHaveLength(2);
   });
 
+  it("handles the maximum 20-candidate placement", () => {
+    const candidates = Array.from({ length: 20 }, (_, index) =>
+      cand("t", [
+        `r${index}c0`,
+        `r${index}c1`,
+        `r${index}c2`,
+        `r${index}c3`,
+        `r${index}c4`,
+      ]),
+    );
+    const sets = findMaximumCompatibleSets(candidates, []);
+    expect(sets).toHaveLength(1);
+    expect(sets[0]).toHaveLength(20);
+  });
+
+  it("returns the empty set when nothing is claimable", () => {
+    expect(findMaximumCompatibleSets([], [])).toEqual([[]]);
+  });
+
   it("drops candidates incompatible with existing sequences (§56)", () => {
     const existing = [
       {

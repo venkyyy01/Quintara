@@ -21,9 +21,17 @@ export default function OnlinePage() {
   const router = useRouter();
   const [joinCode, setJoinCode] = useState("");
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const [playerCount, setPlayerCount] = useState(2);
   const [aiSeats, setAiSeats] = useState(0);
   const [difficulty, setDifficulty] = useState("MEDIUM");
+  const [roomPassword, setRoomPassword] = useState("");
+  const [joinPassword, setJoinPassword] = useState("");
+  const [turnDurationMs, setTurnDurationMs] = useState<number | null>(null);
+  const [turnTimer, setTurnTimer] = useState<{
+    remainingMs: number;
+    totalMs: number;
+  } | null>(null);
 
   useEffect(() => {
     online.connect();
@@ -95,6 +103,43 @@ export default function OnlinePage() {
     return set;
   }, [projected, online.selectedCardId]);
 
+  // Countdown for timed rooms. The server remains authoritative: it applies
+  // the timeout policy, while this display is refreshed on every new version.
+  const activeTurnDurationMs = online.room?.options.turnDurationMs ?? null;
+  const projectedVersion = projected?.version;
+  const currentTurnPlayerId = projected?.currentTurnPlayerId;
+  useEffect(() => {
+    if (
+      online.phase !== "PLAYING" ||
+      !activeTurnDurationMs ||
+      !projectedVersion
+    ) {
+      setTurnTimer(null);
+      return;
+    }
+    const startedAt = Date.now();
+    const tick = () =>
+      setTurnTimer({
+        remainingMs: Math.max(
+          0,
+          activeTurnDurationMs - (Date.now() - startedAt),
+        ),
+        totalMs: activeTurnDurationMs,
+      });
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [
+    online.phase,
+    activeTurnDurationMs,
+    projectedVersion,
+    currentTurnPlayerId,
+  ]);
+
+  const isHost =
+    online.identity !== null &&
+    online.room?.hostPlayerId === online.identity.playerId;
+
   // Playing phase — server-driven game screen.
   if (online.phase === "PLAYING" && online.projected) {
     const state = online.projected;
@@ -132,6 +177,19 @@ export default function OnlinePage() {
               ? null
               : "Reconnecting to the game…"
           }
+          notices={
+            online.errorMessage
+              ? [
+                  {
+                    id: "online-error",
+                    message: online.errorMessage,
+                    tone: "error",
+                  },
+                ]
+              : []
+          }
+          onDismissNotice={online.clearError}
+          turnTimer={turnTimer}
           onSelectCard={(cardId) => online.selectCard(cardId)}
           onCellClick={(cellId: CellId) => {
             const legal = state.legalActions;
@@ -162,7 +220,7 @@ export default function OnlinePage() {
             });
           }}
           onRematch={() => online.rematch()}
-          hideRematch={true}
+          hideRematch={!isHost}
           onQuit={() => {
             online.leaveRoom();
             router.push("/");
@@ -287,11 +345,46 @@ export default function OnlinePage() {
                 ))}
               </select>
             </label>
+            <label className="mt-2.5 block text-sm">
+              Turn timer
+              <select
+                className="mt-1 w-full rounded-[10px] border border-white/10 bg-surface px-3 py-2.5 text-sm"
+                value={turnDurationMs ?? 0}
+                onChange={(e) =>
+                  setTurnDurationMs(Number(e.target.value) || null)
+                }
+              >
+                <option value={0}>No timer</option>
+                <option value={60000}>60 seconds</option>
+                <option value={90000}>90 seconds</option>
+                <option value={120000}>2 minutes</option>
+              </select>
+            </label>
+            <label className="mt-2.5 block text-sm">
+              Password <span className="text-secondary">(optional)</span>
+              <input
+                type="password"
+                value={roomPassword}
+                onChange={(e) => setRoomPassword(e.target.value)}
+                placeholder="Leave empty for an open room"
+                autoComplete="new-password"
+                maxLength={128}
+                className="mt-1 w-full rounded-[10px] border border-white/10 bg-surface px-3.5 py-2.5 text-sm outline-none focus:border-[var(--color-accent)]"
+              />
+            </label>
             <button
               type="button"
               className="btn btn-primary mt-4 w-full"
               onClick={() =>
-                online.createRoom({ playerCount, aiSeats, aiDifficulty: difficulty })
+                online.createRoom({
+                  playerCount,
+                  aiSeats,
+                  aiDifficulty: difficulty,
+                  turnDurationMs,
+                  ...(roomPassword.trim()
+                    ? { password: roomPassword.trim() }
+                    : {}),
+                })
               }
             >
               Create Room
@@ -306,18 +399,38 @@ export default function OnlinePage() {
                 value={joinCode}
                 onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                 placeholder="ROOM CODE"
-                maxLength={6}
+                maxLength={8}
+                autoCapitalize="characters"
+                autoComplete="off"
                 className="flex-1 rounded-[10px] border border-white/10 bg-surface px-3.5 py-2.5 text-center text-lg font-semibold tracking-[0.3em] outline-none focus:border-[var(--color-accent)]"
                 aria-label="Room code"
               />
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={() => online.joinRoom(joinCode)}
+                onClick={() =>
+                  online.joinRoom(
+                    joinCode.trim(),
+                    joinPassword.trim() || undefined,
+                  )
+                }
+                disabled={joinCode.trim().length === 0}
               >
                 Join
               </button>
             </div>
+            <label className="mt-2.5 block text-sm">
+              Password <span className="text-secondary">(if required)</span>
+              <input
+                type="password"
+                value={joinPassword}
+                onChange={(e) => setJoinPassword(e.target.value)}
+                placeholder="Room password"
+                autoComplete="current-password"
+                maxLength={128}
+                className="mt-1 w-full rounded-[10px] border border-white/10 bg-surface px-3.5 py-2.5 text-sm outline-none focus:border-[var(--color-accent)]"
+              />
+            </label>
           </section>
         </>
       )}
@@ -330,16 +443,28 @@ export default function OnlinePage() {
               {online.room.roomCode}
             </span>
           </h2>
+          {online.room.options.hasPassword && (
+            <p className="mt-1 text-xs text-secondary">🔒 Password protected</p>
+          )}
           <div className="mt-2 flex gap-2">
             <button
               type="button"
               className="btn btn-secondary text-xs"
               onClick={async () => {
-                await navigator.clipboard?.writeText(
-                  `${window.location.origin}/play/online?room=${online.room?.roomCode ?? ""}`,
-                );
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1600);
+                const code = online.room?.roomCode ?? "";
+                const invite = `${window.location.origin}/play/online?room=${code}`;
+                try {
+                  if (!navigator.clipboard?.writeText) {
+                    throw new Error("Clipboard unavailable");
+                  }
+                  await navigator.clipboard.writeText(invite);
+                  setCopyFailed(false);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1600);
+                } catch {
+                  setCopied(false);
+                  setCopyFailed(true);
+                }
               }}
             >
               {copied ? "✓ Copied" : "Copy Invite"}
@@ -352,6 +477,13 @@ export default function OnlinePage() {
               Leave
             </button>
           </div>
+          {copyFailed && (
+            <p className="mt-2 text-xs text-[var(--color-danger)]" role="alert">
+              Couldn’t copy automatically. Share code{" "}
+              <strong className="font-mono">{online.room.roomCode}</strong> or
+              the link in your address bar.
+            </p>
+          )}
 
           <ul className="mt-5 flex flex-col gap-2">
             {online.room.players.map((player) => (

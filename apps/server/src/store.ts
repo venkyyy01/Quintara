@@ -15,6 +15,8 @@ export interface StoredAction {
   readonly playerId: string;
   readonly requestId: string;
   readonly versionAfter: number;
+  /** Stable hash of the command payload; detects actionId reuse. */
+  readonly fingerprint: string;
   readonly storedAt: number;
 }
 
@@ -32,6 +34,7 @@ export interface StoredGame {
 export interface GameStore {
   saveGame(game: StoredGame): Promise<void>;
   getGame(gameId: string): Promise<StoredGame | null>;
+  deleteGame(gameId: string): Promise<void>;
   saveSummary(summary: GameSummary): Promise<void>;
   listSummaries(limit: number): Promise<GameSummary[]>;
   getProcessedAction(
@@ -40,11 +43,23 @@ export interface GameStore {
   ): Promise<StoredAction | null>;
 }
 
+/** Bounds the default single-instance store so abandoned games cannot OOM. */
+export const IN_MEMORY_GAME_LIMIT = 500;
+export const IN_MEMORY_SUMMARY_LIMIT = 200;
+
 export class InMemoryGameStore implements GameStore {
   private readonly games = new Map<string, StoredGame>();
   private readonly summaries: GameSummary[] = [];
 
   async saveGame(game: StoredGame): Promise<void> {
+    // Map preserves insertion order: evict the oldest game when full.
+    if (!this.games.has(game.gameId)) {
+      while (this.games.size >= IN_MEMORY_GAME_LIMIT) {
+        const oldest = this.games.keys().next().value;
+        if (oldest === undefined) break;
+        this.games.delete(oldest);
+      }
+    }
     this.games.set(game.gameId, game);
   }
 
@@ -52,12 +67,22 @@ export class InMemoryGameStore implements GameStore {
     return this.games.get(gameId) ?? null;
   }
 
+  async deleteGame(gameId: string): Promise<void> {
+    this.games.delete(gameId);
+  }
+
   async saveSummary(summary: GameSummary): Promise<void> {
     this.summaries.unshift(summary);
+    if (this.summaries.length > IN_MEMORY_SUMMARY_LIMIT) {
+      this.summaries.length = IN_MEMORY_SUMMARY_LIMIT;
+    }
   }
 
   async listSummaries(limit: number): Promise<GameSummary[]> {
-    return this.summaries.slice(0, limit);
+    const safeLimit = Number.isInteger(limit)
+      ? Math.min(IN_MEMORY_SUMMARY_LIMIT, Math.max(0, limit))
+      : 20;
+    return this.summaries.slice(0, safeLimit);
   }
 
   async getProcessedAction(

@@ -7,9 +7,10 @@
  * for navigations.
  */
 
-const CACHE_VERSION = "quintara-shell-v1";
+const CACHE_VERSION = "quintara-shell-v2";
 const SHELL_ASSETS = [
   "/",
+  "/offline",
   "/manifest.webmanifest",
   "/icon.svg",
   "/icons/icon-192.png",
@@ -18,6 +19,7 @@ const SHELL_ASSETS = [
   "/tutorial",
   "/play/local",
   "/play/online",
+  "/stats",
 ];
 
 self.addEventListener("install", (event) => {
@@ -25,8 +27,19 @@ self.addEventListener("install", (event) => {
     caches
       .open(CACHE_VERSION)
       .then((cache) => cache.addAll(SHELL_ASSETS))
-      .then(() => self.skipWaiting()),
+      // First install activates immediately; updates wait so the page can
+      // offer a non-disruptive "new version" refresh.
+      .then(() => {
+        if (!self.registration.active) return self.skipWaiting();
+        return undefined;
+      }),
   );
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener("activate", (event) => {
@@ -62,11 +75,13 @@ self.addEventListener("fetch", (event) => {
           caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
           return response;
         })
-        .catch(() =>
-          caches
-            .match(request)
-            .then((cached) => cached ?? caches.match("/")),
-        ),
+        .catch(async () => {
+          const cached = await caches.match(request);
+          if (cached) return cached;
+          return (
+            (await caches.match("/offline")) ?? (await caches.match("/"))
+          );
+        }),
     );
     return;
   }

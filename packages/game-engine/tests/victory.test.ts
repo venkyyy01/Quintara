@@ -211,7 +211,7 @@ describe("game end behaviour (§100)", () => {
         targetCellId: "r0c1",
       }),
     ).toThrow(
-      expect.objectContaining({ code: "GAME_ALREADY_FINISHED" }) as Error,
+      expect.objectContaining({ code: "GAME_NOT_ACTIVE" }) as Error,
     );
   });
 });

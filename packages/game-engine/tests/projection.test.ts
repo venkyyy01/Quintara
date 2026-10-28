@@ -26,6 +26,24 @@ describe("state projection privacy (§131)", () => {
     expect(projected.hand?.map((c) => c.id)).toEqual(expectedIds);
   });
 
+  it("marks dead cards in the viewer's own hand", () => {
+    const pre = scenario().build();
+    const eightHearts = pre.boardDefinition.cells.filter(
+      (cell) => cell.type === "CARD" && cell.cardCode === "8H",
+    );
+    const [first, second] = eightHearts;
+    const state = scenario()
+      .withCurrentPlayer("A")
+      .withHand("A", ["8H", "2C"])
+      .withHand("B", ["3C"])
+      .withMarker("A", first!.row, first!.column)
+      .withMarker("B", second!.row, second!.column)
+      .build();
+    const projected = projectStateForViewer(state, "p-A");
+    expect(projected.hand?.find((card) => card.code === "8H")?.dead).toBe(true);
+    expect(projected.hand?.find((card) => card.code === "2C")?.dead).toBe(false);
+  });
+
   it("never leaks opponent hand identities into the payload (§8, §23)", () => {
     const state = builtState();
     const projected = projectStateForViewer(state, "p-A");

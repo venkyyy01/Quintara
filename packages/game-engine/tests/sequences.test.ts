@@ -465,6 +465,58 @@ describe("ambiguous six-run (§63–§66, §124)", () => {
     );
   });
 
+  it("attributes a pending selection to the placement action (§66)", () => {
+    const state = scenario()
+      .withCurrentPlayer("A")
+      .withHand("A", ["JC"])
+      .withHand("B", ["2C"])
+      .withMarker("A", 5, 1)
+      .withMarker("A", 5, 2)
+      .withMarker("A", 5, 4)
+      .withMarker("A", 5, 5)
+      .withMarker("A", 5, 6)
+      .build();
+    const pending = playJackAt(state, "p-A", "r5c3", "place-7");
+    expect(pending.state.pendingSequenceActionId).toBe("place-7");
+    expect(validateGameState(pending.state)).toEqual([]);
+
+    const selected = applyCommand(pending.state, {
+      type: "SELECT_SEQUENCE_SET",
+      playerId: "p-A",
+      actionId: "choose-8",
+      sequenceCellSets: [["r5c1", "r5c2", "r5c3", "r5c4", "r5c5"]],
+    });
+    const sequence = selected.state.completedSequences["team-1"]?.[0];
+    expect(sequence?.createdByActionId).toBe("place-7");
+    expect(selected.state.pendingSequenceActionId).toBeNull();
+    expect(validateGameState(selected.state)).toEqual([]);
+  });
+
+  it("credits a selection-win to the placement action", () => {
+    const state = scenario({ players: 3 })
+      .withCurrentPlayer("A")
+      .withHand("A", ["JC"])
+      .withMarker("A", 5, 1)
+      .withMarker("A", 5, 2)
+      .withMarker("A", 5, 4)
+      .withMarker("A", 5, 5)
+      .withMarker("A", 5, 6)
+      .build();
+    const pending = playJackAt(state, "p-A", "r5c3", "place-win");
+    expect(pending.state.turnPhase).toBe("AWAITING_SEQUENCE_SELECTION");
+
+    const selected = applyCommand(pending.state, {
+      type: "SELECT_SEQUENCE_SET",
+      playerId: "p-A",
+      actionId: "choose-win",
+      sequenceCellSets: [["r5c1", "r5c2", "r5c3", "r5c4", "r5c5"]],
+    });
+    expect(selected.state.status).toBe("FINISHED");
+    const won = selected.events.find((event) => event.type === "GAME_WON");
+    expect(won).toMatchObject({ winningActionId: "place-win" });
+    expect(validateGameState(selected.state)).toEqual([]);
+  });
+
   it("registers exactly the player's selected window and protects it (§67, §124)", () => {
     const state = scenario()
       .withCurrentPlayer("A")
@@ -566,6 +618,49 @@ describe("crossing sequences (§57–§58, §123)", () => {
       .map((s) => s.direction)
       .sort();
     expect(dirs).toEqual(["DIAGONAL_DOWN", "HORIZONTAL"]);
+  });
+
+  it("vertical + diagonal sharing one marker both count", () => {
+    const state = scenario()
+      .withCurrentPlayer("A")
+      .withHand("A", ["JC"])
+      .withHand("B", ["2C"])
+      .withMarker("A", 2, 5)
+      .withMarker("A", 3, 5)
+      .withMarker("A", 4, 5)
+      .withMarker("A", 6, 5)
+      .withMarker("A", 2, 2)
+      .withMarker("A", 3, 3)
+      .withMarker("A", 4, 4)
+      .withMarker("A", 6, 6)
+      .build();
+    const result = playJackAt(state, "p-A", "r5c5");
+    const dirs = (result.state.completedSequences["team-1"] ?? [])
+      .map((s) => s.direction)
+      .sort();
+    expect(dirs).toEqual(["DIAGONAL_DOWN", "VERTICAL"]);
+    expect(validateGameState(result.state)).toEqual([]);
+  });
+
+  it("detection is invariant to the order of pre-existing markers", () => {
+    const complete = (order: readonly number[]) => {
+      const builder = scenario()
+        .withCurrentPlayer("A")
+        .withHand("A", ["JC"])
+        .withHand("B", ["2C"]);
+      for (const column of order) {
+        builder.withMarker("A", 5, column);
+      }
+      const result = playJackAt(builder.build(), "p-A", "r5c5");
+      return (result.state.completedSequences["team-1"] ?? [])
+        .map((sequence) => [...sequence.cells].sort().join(","))
+        .sort();
+    };
+
+    const ascending = complete([1, 2, 3, 4, 6, 7, 8, 9]);
+    const shuffled = complete([9, 2, 7, 4, 1, 8, 3, 6]);
+    expect(shuffled).toEqual(ascending);
+    expect(ascending).toHaveLength(2);
   });
 
   it("two diagonals sharing one marker both count", () => {

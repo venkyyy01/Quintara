@@ -54,6 +54,26 @@ export default function HomePage() {
           A strategy game of cards and position: play cards to claim spaces,
           complete five-in-a-row lines, and protect them from rival Jacks.
         </p>
+        <Link
+          href="/stats"
+          className="mt-4 text-sm text-secondary underline-offset-4 hover:text-accent hover:underline"
+        >
+          Stats &amp; history
+        </Link>
+        <nav
+          className="mt-6 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-secondary"
+          aria-label="Legal"
+        >
+          <Link href="/privacy" className="hover:text-accent">
+            Privacy
+          </Link>
+          <Link href="/terms" className="hover:text-accent">
+            Terms
+          </Link>
+          <Link href="/offline" className="hover:text-accent">
+            Offline help
+          </Link>
+        </nav>
       </div>
     </main>
   );

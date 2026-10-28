@@ -16,7 +16,16 @@ import {
   type GameState,
 } from "@quintara/game-engine";
 import type { ServerMessage } from "@quintara/shared-types";
-import { SessionManager, pickTimeoutAction } from "../src/session.js";
+import {
+  buildAuthoritativeCommand,
+  SessionManager,
+  pickTimeoutAction,
+} from "../src/session.js";
+import { createGuest } from "../src/auth.js";
+import {
+  IN_MEMORY_GAME_LIMIT,
+  InMemoryGameStore,
+} from "../src/store.js";
 
 function setupGame() {
   const delivered: Record<string, ServerMessage[]> = {
@@ -553,5 +562,172 @@ describe("timeout resolves exchange-only turns (§75, §94)", () => {
     expect(game.currentState.resultType).toBe("STALEMATE");
 
     vi.useRealTimers();
+  });
+});
+
+describe("room secrets and hostile input (§74, §139)", () => {
+  it("never exposes the room password, only hasPassword", () => {
+    const sessions = new SessionManager();
+    const room = sessions.createRoom("host", "Host", "PRIVATE", {
+      playerCount: 2,
+      password: "correct horse battery staple",
+    });
+    expect(room.options.hasPassword).toBe(true);
+    expect("password" in room.options).toBe(false);
+    expect(JSON.stringify(room)).not.toContain("correct horse");
+    expect(
+      sessions.joinRoom("guest", "Guest", room.roomCode, "wrong").error,
+    ).toBeTruthy();
+    expect(
+      sessions.joinRoom(
+        "guest",
+        "Guest",
+        room.roomCode,
+        "correct horse battery staple",
+      ).room,
+    ).toBeDefined();
+  });
+
+  it("bounds malformed room options instead of allocating unbounded seats", () => {
+    const sessions = new SessionManager();
+    const fallback = sessions.createRoom(
+      "fallback",
+      "Fallback",
+      "PRIVATE",
+      null as never,
+    );
+    expect(fallback.options.playerCount).toBe(2);
+    expect(fallback.players).toHaveLength(1);
+
+    const huge = sessions.createRoom("huge", "Huge", "PRIVATE", {
+      playerCount: 50_000_000,
+      aiSeats: 49_999_999,
+      teamSizes: "not-an-array" as never,
+      turnDurationMs: Number.POSITIVE_INFINITY,
+      requiredSequences: 1_000_000,
+    } as never);
+    expect(huge.options.playerCount).toBe(2);
+    expect(huge.options.aiSeats).toBe(1);
+    expect(huge.players).toHaveLength(2);
+    expect(huge.options.teamSizes).toEqual([]);
+    expect(huge.options.turnDurationMs).toBeNull();
+    expect(huge.options.requiredSequences).toBeNull();
+  });
+
+  it("returns a clean error for a non-string room code", () => {
+    const sessions = new SessionManager();
+    expect(
+      sessions.joinRoom("guest", "Guest", 123 as never).error,
+    ).toBeTruthy();
+  });
+
+  it("drops a disconnected player from the quick-match queue", () => {
+    const delivered: Record<string, ServerMessage[]> = {};
+    const sessions = new SessionManager();
+    sessions.attachSink({
+      send(playerId, message) {
+        (delivered[playerId] ??= []).push(message);
+      },
+      broadcastRoom() {},
+    });
+    sessions.joinQuickMatch("a", "A");
+    sessions.setConnection("a", false);
+    sessions.joinQuickMatch("b", "B");
+    // If "a" had stayed queued, tryMatch would have created a room for both.
+    expect(sessions.getRoomForPlayer("b")).toBeUndefined();
+    expect(
+      delivered["b"]?.some(
+        (message) =>
+          message.type === "MATCHMAKING_STATUS" && message.queued,
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps an active game alive across a reconnect and migrates the host", () => {
+    vi.useFakeTimers();
+    const { sessions, roomId } = setupGame();
+    sessions.setConnection("alice", false);
+    vi.advanceTimersByTime(60 * 1000);
+    sessions.setConnection("alice", true);
+    vi.advanceTimersByTime(5 * 60 * 1000);
+    expect(sessions.getRoom(roomId)).toBeDefined();
+
+    sessions.setConnection("alice", false);
+    vi.advanceTimersByTime(3 * 60 * 1000 + 10);
+    expect(sessions.getRoom(roomId)!.hostPlayerId).toBe("bob");
+    vi.useRealTimers();
+  });
+});
+
+describe("command allowlist and idempotency fingerprints (§79, §102)", () => {
+  it("rebuilds commands from an allowlist and drops injected fields", () => {
+    const built = buildAuthoritativeCommand(
+      {
+        type: "PLAY_NORMAL_CARD",
+        actionId: "a1",
+        expectedVersion: 3,
+        cardId: "c1",
+        targetCellId: "r1c1",
+        injected: "<script>alert(1)</script>",
+      },
+      "player",
+    );
+    expect(built).toEqual({
+      playerId: "player",
+      actionId: "a1",
+      expectedVersion: 3,
+      type: "PLAY_NORMAL_CARD",
+      cardId: "c1",
+      targetCellId: "r1c1",
+    });
+    expect(
+      buildAuthoritativeCommand(
+        {
+          type: "PLAY_NORMAL_CARD",
+          actionId: "a1",
+          expectedVersion: -1,
+          cardId: "c1",
+          targetCellId: "r1c1",
+        },
+        "player",
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects reusing an actionId for a different payload", () => {
+    const { sessions, roomId } = setupGame();
+    const state = sessions.getGameState(roomId)!;
+    const active = currentPlayerId(state)!;
+    const command = firstLegalCommand(state, active);
+    const first = sessions.submitCommand(roomId, active, command, "r1");
+    expect(first.ok).toBe(true);
+    const reused = sessions.submitCommand(
+      roomId,
+      active,
+      { ...command, cardId: "different-card" },
+      "r2",
+    );
+    expect(reused.ok).toBe(false);
+    expect(reused.errorCode).toBe("ACTION_ID_REUSED");
+  });
+});
+
+describe("bounded persistence and identity", () => {
+  it("evicts the oldest games and supports deletion", async () => {
+    const store = new InMemoryGameStore();
+    for (let i = 0; i < IN_MEMORY_GAME_LIMIT + 2; i++) {
+      await store.saveGame({ gameId: `game-${i}` } as never);
+    }
+    expect(await store.getGame("game-0")).toBeNull();
+    expect(await store.getGame("game-1")).toBeNull();
+    expect(await store.getGame("game-2")).not.toBeNull();
+    await store.deleteGame("game-2");
+    expect(await store.getGame("game-2")).toBeNull();
+  });
+
+  it("issues full-entropy guest ids", () => {
+    expect(createGuest().playerId).toMatch(
+      /^guest-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
   });
 });

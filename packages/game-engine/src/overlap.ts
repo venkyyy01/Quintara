@@ -47,53 +47,123 @@ export function filterClaimableCandidates(
 /**
  * §64 QUINTARA SEQUENCE CLAIM RULE + §110 SEQUENCE SET RESOLUTION:
  * find every maximum-cardinality pairwise-compatible subset of the
- * claimable candidates. Board scale is tiny — brute force is safe and
- * correct (§148).
+ * claimable candidates.
+ *
+ * This is a maximum-clique enumeration. A naive 2^n mask scan is
+ * exponential in the number of candidates; a placement can produce up to 20
+ * candidates, so branch-and-bound (Bron–Kerbosch with pivoting) is used
+ * instead. It visits only maximal cliques, and pruning by the remaining
+ * candidate count keeps the common case tiny.
  */
 export function findMaximumCompatibleSets(
   candidates: readonly SequenceCandidate[],
   existingForTeam: readonly CompletedSequence[],
 ): SequenceCandidate[][] {
   const claimable = filterClaimableCandidates(candidates, existingForTeam);
+  if (claimable.length === 0) return [[]];
 
-  const best: SequenceCandidate[][] = [];
-  let bestSize = -1;
-
-  const total = 1 << claimable.length; // claimable.length is small
-  for (let mask = 0; mask < total; mask++) {
-    const subset: SequenceCandidate[] = [];
-    for (let i = 0; i < claimable.length; i++) {
-      if (mask & (1 << i)) subset.push(claimable[i] as SequenceCandidate);
-    }
-    if (subset.length < bestSize) continue;
-    if (!isPairwiseCompatible(subset)) continue;
-    if (subset.length > bestSize) {
-      bestSize = subset.length;
-      best.length = 0;
-    }
-    best.push(subset);
-  }
-
-  // Deduplicate identical sets (same candidates in any order).
-  const byKey = new Map<string, SequenceCandidate[]>();
-  for (const set of best) {
-    const key = optionKey(set);
-    if (!byKey.has(key)) byKey.set(key, set);
-  }
-  return [...byKey.values()];
-}
-
-function isPairwiseCompatible(
-  set: readonly SequenceCandidate[],
-): boolean {
-  for (let i = 0; i < set.length; i++) {
-    for (let j = i + 1; j < set.length; j++) {
-      if (!sequencesCompatible(set[i] as SequenceCandidate, set[j] as SequenceCandidate)) {
-        return false;
+  // Compatibility graph, indexed by claimable candidate.
+  const neighbors: Set<number>[] = claimable.map(() => new Set<number>());
+  for (let i = 0; i < claimable.length; i++) {
+    for (let j = i + 1; j < claimable.length; j++) {
+      if (
+        sequencesCompatible(
+          claimable[i] as SequenceCandidate,
+          claimable[j] as SequenceCandidate,
+        )
+      ) {
+        (neighbors[i] as Set<number>).add(j);
+        (neighbors[j] as Set<number>).add(i);
       }
     }
   }
-  return true;
+
+  const best: number[][] = [];
+  let bestSize = 0;
+  const seen = new Set<string>();
+
+  const search = (
+    chosen: readonly number[],
+    possible: Set<number>,
+    excluded: Set<number>,
+  ): void => {
+    if (possible.size === 0 && excluded.size === 0) {
+      // A maximal clique. Keep it only if it is (so far) maximum.
+      if (chosen.length < bestSize) return;
+      const sorted = [...chosen].sort((a, b) => a - b);
+      const key = sorted.join(",");
+      if (chosen.length > bestSize) {
+        bestSize = chosen.length;
+        best.length = 0;
+        seen.clear();
+      }
+      if (!seen.has(key)) {
+        seen.add(key);
+        best.push(sorted);
+      }
+      return;
+    }
+
+    // No extension of `chosen` can beat the best known set.
+    if (chosen.length + possible.size < bestSize) return;
+
+    // Pivot on the vertex covering the most remaining candidates; only its
+    // non-neighbours can start a new maximal clique at this level.
+    let pivot = -1;
+    let pivotCoverage = -1;
+    for (const vertex of [...possible, ...excluded]) {
+      let coverage = 0;
+      for (const neighbor of neighbors[vertex] as Set<number>) {
+        if (possible.has(neighbor)) coverage++;
+      }
+      if (coverage > pivotCoverage) {
+        pivot = vertex;
+        pivotCoverage = coverage;
+      }
+    }
+    const branches = [...possible].filter(
+      (vertex) =>
+        pivot < 0 || !(neighbors[pivot] as Set<number>).has(vertex),
+    );
+
+    for (const vertex of branches) {
+      if (!possible.has(vertex)) continue;
+      const adjacent = neighbors[vertex] as Set<number>;
+      const nextPossible = new Set<number>();
+      for (const other of possible) {
+        if (adjacent.has(other)) nextPossible.add(other);
+      }
+      const nextExcluded = new Set<number>();
+      for (const other of excluded) {
+        if (adjacent.has(other)) nextExcluded.add(other);
+      }
+      search([...chosen, vertex], nextPossible, nextExcluded);
+      possible.delete(vertex);
+      excluded.add(vertex);
+    }
+  };
+
+  search(
+    [],
+    new Set(claimable.map((_, index) => index)),
+    new Set(),
+  );
+
+  const byKey = new Map<string, SequenceCandidate[]>();
+  for (const indices of best) {
+    const set = indices.map(
+      (index) => claimable[index] as SequenceCandidate,
+    );
+    byKey.set(optionKey(set), set);
+  }
+  return [...byKey.entries()]
+    .sort(([a], [b]) => compareStrings(a, b))
+    .map(([, set]) => set);
+}
+
+/** Locale-independent string ordering (UTF-16 code units). */
+export function compareStrings(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 /**
@@ -107,10 +177,10 @@ export function toSelectionOptions(
     .map((sequences) => ({
       optionId: optionKey(sequences),
       sequences: [...sequences].sort((a, b) =>
-        candidateKey(a).localeCompare(candidateKey(b)),
+        compareStrings(candidateKey(a), candidateKey(b)),
       ),
     }))
-    .sort((a, b) => a.optionId.localeCompare(b.optionId));
+    .sort((a, b) => compareStrings(a.optionId, b.optionId));
 }
 
 /**
@@ -124,6 +194,6 @@ export function defaultSequenceOption(
     throw new Error("No sequence selection options");
   }
   return options.reduce((best, option) =>
-    option.optionId < best.optionId ? option : best,
+    compareStrings(option.optionId, best.optionId) < 0 ? option : best,
   );
 }

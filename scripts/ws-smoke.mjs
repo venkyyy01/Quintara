@@ -69,7 +69,7 @@ assert(true, "both clients authenticated");
 alice.send({ type: "CREATE_ROOM", requestId: "r1", mode: "PRIVATE", options: { playerCount: 2 } });
 const roomMessage = await alice.next((m) => m.type === "ROOM_STATE");
 const roomCode = roomMessage.room.roomCode;
-assert(typeof roomCode === "string" && roomCode.length === 6, `room created with code ${roomCode}`);
+assert(typeof roomCode === "string" && roomCode.length === 8, `room created with code ${roomCode}`);
 
 bob.send({ type: "JOIN_ROOM", requestId: "r2", roomCode });
 await bob.next((m) => m.type === "ROOM_STATE" && m.room.players.length === 2);

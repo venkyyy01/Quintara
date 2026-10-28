@@ -16,16 +16,20 @@ pass-and-play, or online in private rooms and quick matches.
 - **Four AI difficulties** (Easy / Medium / Hard / Expert) that never inspect
   hidden opponent hands.
 - **Local pass-and-play** with handoff privacy screens, and **solo vs AI** —
-  all offline-capable.
+  all offline-capable, with automatic save/resume, a fixed-seed **Daily
+  Challenge**, and on-device stats/history.
 - **Online multiplayer** — authoritative server, private rooms with invite
-  codes, quick match, reconnect-safe, idempotent actions, optimistic
-  concurrency, per-viewer state projection (opponent hands never cross the
-  wire).
-- **PWA** — installable, standalone display, offline app shell for AI/local/
-  tutorial modes.
+  codes and optional passwords, configurable turn timers, quick match,
+  reconnect-safe, idempotent actions, optimistic concurrency, per-viewer state
+  projection (opponent hands never cross the wire).
+- **PWA** — installable, standalone display, offline app shell and offline
+  fallback page, plus an in-app “new version ready” refresh flow.
 - **Premium responsive UI** — dark-graphite design system, vector card art,
   team markers with colour + symbol + pattern (never colour alone), reduced
-  motion support, keyboard/screen-reader labels.
+  motion support, keyboard/screen-reader labels, focus-managed dialogs.
+- **Launch basics** — privacy/terms pages, branded 404/error/offline pages,
+  robots/sitemap/Open Graph metadata, and a GitHub Actions verification
+  workflow.
 
 ## Architecture
 
@@ -85,19 +89,27 @@ For online play the web client needs the server URL:
 ```bash
 # apps/web/.env.local
 NEXT_PUBLIC_WS_URL=ws://localhost:4000/ws
+# Used for canonical links, sitemap and Open Graph metadata in production.
+NEXT_PUBLIC_SITE_URL=https://your-domain.example
 ```
 
-Without it the client derives the WebSocket URL from its own origin (useful
-when both are served behind one domain).
+Without `NEXT_PUBLIC_WS_URL` the client derives the WebSocket URL from its own
+origin (useful when both are served behind one domain).
+
+Copy `.env.example` to the relevant location as a starting point.
 
 ### Environment variables (server)
 
-| Variable               | Purpose                                        | Default        |
-| ---------------------- | ---------------------------------------------- | -------------- |
-| `PORT`                 | HTTP/WS port                                   | `4000`         |
-| `HOST`                 | Bind address                                   | `0.0.0.0`      |
-| `CORS_ORIGIN`          | Allowed origin for the web client              | permissive     |
-| `QUINTARA_AUTH_SECRET` | HMAC secret for player tokens (set in prod!)   | ephemeral      |
+| Variable               | Purpose                                              | Default                 |
+| ---------------------- | ---------------------------------------------------- | ----------------------- |
+| `PORT`                 | HTTP/WS port                                         | `4000`                  |
+| `HOST`                 | Bind address                                         | `0.0.0.0`               |
+| `CORS_ORIGIN`          | Comma-separated allowed origins, or `true` in dev    | `http://localhost:3000` |
+| `QUINTARA_AUTH_SECRET` | HMAC secret for player tokens (≥32 chars in prod)    | ephemeral (dev only)    |
+
+`QUINTARA_AUTH_SECRET` is mandatory when `NODE_ENV=production`: the server
+refuses to boot without it. A permissive CORS setting (`CORS_ORIGIN=true`)
+should only be used for local development.
 
 ## Testing
 
@@ -105,7 +117,11 @@ when both are served behind one domain).
 npm test                   # all workspaces
 npm run typecheck          # strict TypeScript across the monorepo
 npm run lint               # ESLint
+npm run build              # packages + server + Next.js production build
 ```
+
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, tests and the production
+build on Node 20 and 22 for every push to `main` and every pull request.
 
 Engine coverage includes every mandated rules test: board/deck invariants,
 player configurations and interleaved turn order, normal card play, Two-Eyed
@@ -152,13 +168,28 @@ v1.0); product and design specifications live in `adr/Game_design_plan.md`.
   WebSockets; for multi-instance deployments implement the `GameStore`
   interface in `apps/server/src/store.ts` against PostgreSQL/Redis (the
   in-memory store is the single-instance default).
-- Set `QUINTARA_AUTH_SECRET` and point `NEXT_PUBLIC_WS_URL` at the server.
+- Set `QUINTARA_AUTH_SECRET` (≥32 characters), `CORS_ORIGIN`,
+  `NEXT_PUBLIC_WS_URL` and `NEXT_PUBLIC_SITE_URL` for the target environment.
+- Put the server behind TLS (`wss://`) and a reverse proxy that forwards
+  WebSocket upgrades. The process handles `SIGTERM`/`SIGINT` with a graceful
+  shutdown.
+- Before a paid launch, replace the placeholder contact addresses on the
+  privacy/terms pages and review them with counsel.
 
 ## Known limitations
 
 - Persistence is in-memory by default (single instance); the `GameStore`
-  interface is the seam for a PostgreSQL/Redis adapter.
+  interface is the seam for a PostgreSQL/Redis adapter. Guest tokens and local
+  saves are device-scoped.
 - Ranking/seasons, accounts (email/OAuth), replay viewer UI and achievements
-  are architected for but intentionally deferred to v1.0.
+  are architected for but intentionally deferred beyond this release.
 - The turn timer auto-action policy is versioned ("policy v1"): winning move →
   block opponent win → first deterministic legal action.
+- Three-player Standard games use a three-team layout and are more draw-prone
+  than 2/4/6-player games; the UI warns about this rather than hiding the
+  valid configuration.
+- AI difficulty tiers are heuristic, not tournament-calibrated or guaranteed
+  to be strictly transitive. Treat Expert as a strong local opponent, not a
+  ranked benchmark.
+- Online rooms are ephemeral. A server restart ends active online matches;
+  local save/resume is intentionally local-only.

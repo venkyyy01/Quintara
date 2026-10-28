@@ -133,6 +133,12 @@ export interface GameState {
 
   readonly deadCardExchangeUsed: boolean;
   readonly pendingSequenceOptions: readonly SequenceSelectionOption[] | null;
+  /**
+   * Action that created the pending sequence-selection prompt (§66). The
+   * following SELECT_SEQUENCE_SET is only a choice; completed sequences must
+   * remain attributed to the placement that produced them.
+   */
+  readonly pendingSequenceActionId: ActionId | null;
 
   readonly requiredSequences: number;
   readonly winnerTeamId: TeamId | null;
