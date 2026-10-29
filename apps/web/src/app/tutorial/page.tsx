@@ -360,6 +360,21 @@ export default function TutorialPage() {
         />
       </div>
 
+      <label className="mt-4 flex items-center gap-2 text-xs text-secondary">
+        Jump to lesson
+        <select
+          value={index}
+          onChange={(event) => restart(Number(event.target.value))}
+          className="rounded-[8px] border border-white/10 bg-surface px-2.5 py-1.5 text-xs text-text-primary outline-none focus:border-[var(--color-accent)]"
+        >
+          {LESSONS.map((entry, lessonIndex) => (
+            <option key={entry.title} value={lessonIndex}>
+              {lessonIndex + 1}. {entry.title}
+            </option>
+          ))}
+        </select>
+      </label>
+
       <section className="panel mt-4 p-4">
         <h2 className="font-semibold">{lesson.title}</h2>
         <p className="mt-1 text-sm text-secondary">{lesson.instruction}</p>

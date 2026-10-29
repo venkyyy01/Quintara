@@ -47,6 +47,7 @@ function LocalPlay() {
           : null;
   const isQuick = params.get("quick") !== null;
   const isChallenge = params.get("challenge") !== null;
+  const dailyView = isChallenge || params.get("daily") !== null;
 
   const [mode, setMode] = useState<"SOLO" | "PASS_AND_PLAY" | null>(
     initialMode as "SOLO" | "PASS_AND_PLAY" | null,
@@ -69,8 +70,9 @@ function LocalPlay() {
       return;
     }
     // Resume an interrupted match when the player opens local play directly.
-    if (!initialMode && game.hydrate()) {
-      setMode(game.mode);
+    if (!initialMode) {
+      const restored = game.hydrate();
+      if (restored) setMode(restored);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -100,6 +102,15 @@ function LocalPlay() {
     }
     game.start({ mode: selected, seats, difficulty, seed });
     setMode(selected);
+    // Replace the one-shot start parameters so a reload resumes the match
+    // instead of silently dealing a new one.
+    if (typeof window !== "undefined") {
+      window.history.replaceState(
+        null,
+        "",
+        seed ? "/play/local?daily=1" : "/play/local",
+      );
+    }
   }
 
   const projected = game.projected;
@@ -198,7 +209,7 @@ function LocalPlay() {
       onDismissNotice={(id) => game.dismissToast(Number(id))}
       neutralResult={mode === "PASS_AND_PLAY"}
       connectionLabel={
-        isChallenge ? `Daily Challenge · ${dailyLabel()}` : null
+        dailyView ? `Daily Challenge · ${dailyLabel()}` : null
       }
       handoff={{
         pending: game.awaitingHandoff,

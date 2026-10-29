@@ -270,7 +270,7 @@ interface LocalGameState {
     seed?: string;
   }) => void;
   /** Restores an interrupted local match, if one is saved. */
-  hydrate: () => boolean;
+  hydrate: () => LocalMode | null;
   rematch: () => void;
   quit: () => void;
 
@@ -558,9 +558,9 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
     },
 
     hydrate: () => {
-      if (get().state) return false;
+      if (get().state) return null;
       const saved = loadSave();
-      if (!saved) return false;
+      if (!saved) return null;
       set({
         mode: saved.mode,
         seats: saved.seats,
@@ -574,7 +574,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
         botThinking: false,
       });
       refresh(saved.state);
-      return true;
+      return saved.mode;
     },
 
     rematch: () => {

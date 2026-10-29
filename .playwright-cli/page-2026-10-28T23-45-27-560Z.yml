@@ -1,0 +1,59 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - heading "Play Online" [level=1] [ref=e4]
+      - link "← Home" [ref=e5] [cursor=pointer]:
+        - /url: /
+    - status [ref=e6]: ○ Connecting…
+    - generic [ref=e7]:
+      - heading "Quick Match" [level=2] [ref=e8]
+      - paragraph [ref=e9]: Find a compatible opponent automatically (§58).
+      - button "Find Opponent" [ref=e10] [cursor=pointer]
+    - generic [ref=e11]:
+      - heading "Private Room" [level=2] [ref=e12]
+      - paragraph [ref=e13]: Host a game and share the invite code.
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - text: Players
+          - combobox "Players" [ref=e16]:
+            - option "2 players" [selected]
+            - option "3 players"
+            - option "4 players"
+            - option "6 players"
+        - generic [ref=e17]:
+          - text: AI seats
+          - combobox "AI seats" [ref=e18]:
+            - option "0 bots" [selected]
+            - option "1 bots"
+            - option "2 bots"
+            - option "3 bots"
+      - generic [ref=e19]:
+        - text: Bot difficulty
+        - combobox "Bot difficulty" [ref=e20]:
+          - option "Easy"
+          - option "Medium" [selected]
+          - option "Hard"
+          - option "Expert"
+      - generic [ref=e21]:
+        - text: Turn timer
+        - combobox "Turn timer" [ref=e22]:
+          - option "No timer" [selected]
+          - option "60 seconds"
+          - option "90 seconds"
+          - option "2 minutes"
+      - generic [ref=e23]:
+        - text: Password (optional)
+        - textbox "Password (optional)" [ref=e24]:
+          - /placeholder: Leave empty for an open room
+      - button "Create Room" [ref=e25] [cursor=pointer]
+    - generic [ref=e26]:
+      - heading "Join a Room" [level=2] [ref=e27]
+      - generic [ref=e28]:
+        - textbox "Room code" [ref=e29]:
+          - /placeholder: ROOM CODE
+        - button "Join" [disabled] [ref=e30]
+      - generic [ref=e31]:
+        - text: Password (if required)
+        - textbox "Password (if required)" [ref=e32]:
+          - /placeholder: Room password
+  - alert [ref=e33]

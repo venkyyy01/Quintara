@@ -196,7 +196,9 @@ export function GameBoard({
                     onCellKeyDown(event, cell.row, cell.column)
                   }
                   onClick={() => {
-                    if (isLegal || isRemovable) onCellClick(cell.id);
+                    // Callers decide whether a non-target cell is a no-op or
+                    // explanatory feedback (the tutorial uses the latter).
+                    onCellClick(cell.id);
                   }}
                   style={{
                     cursor: isLegal || isRemovable ? "pointer" : "default",

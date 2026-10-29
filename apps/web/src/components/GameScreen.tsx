@@ -133,9 +133,17 @@ export function GameScreen(props: GameScreenProps) {
   const selectedCard = selectedCardId
     ? projected.hand?.find((card) => card.id === selectedCardId)
     : null;
+  const suitSymbol =
+    selectedCard &&
+    ({
+      HEARTS: "♥",
+      DIAMONDS: "♦",
+      CLUBS: "♣",
+      SPADES: "♠",
+    } as Record<string, string>)[selectedCard.suit];
   const legalTargetCount = legalTargets.size + removableTargets.size;
   const selectionAnnouncement = selectedCard
-    ? `${selectedCard.rank}${selectedCard.suit} selected. ${legalTargetCount} legal ${legalTargetCount === 1 ? "space" : "spaces"}.`
+    ? `${selectedCard.rank}${suitSymbol ?? ` of ${selectedCard.suit.toLowerCase()}`} selected. ${legalTargetCount} legal ${legalTargetCount === 1 ? "space" : "spaces"}.`
     : viewerIsActing
       ? "Select a card from your hand."
       : "";
