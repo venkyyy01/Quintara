@@ -14,6 +14,35 @@ in private rooms and quick matches.
 
 ![Quintara home screen](docs/screenshots/home.png)
 
+## At a glance
+
+| Property | Details |
+| --- | --- |
+| **Modes** | Solo vs AI · local pass-and-play · online private rooms and quick match |
+| **Players** | 2, 3, 4, 6, 8, 9, 10, or 12 (mode-dependent) |
+| **AI** | Easy · Medium · Hard · Expert |
+| **Stack** | TypeScript · Next.js 15 · Fastify · WebSocket · Vitest |
+| **Platform** | Installable PWA for desktop and mobile browsers |
+| **License** | Publicly viewable; not open source |
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Screenshots](#screenshots)
+- [How to play](#how-to-play)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Documentation](#documentation)
+- [npm scripts](#npm-scripts)
+- [Testing and quality](#testing-and-quality)
+- [Environment variables](#environment-variables)
+- [Deployment](#deployment)
+- [Security and privacy](#security-and-privacy)
+- [Project status](#project-status)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Quick start
 
 Requirements: **Node.js ≥ 20.11** and **npm ≥ 10**.
@@ -57,6 +86,21 @@ which is useful when both apps sit behind one domain.
   <img src="docs/screenshots/online-lobby.png" alt="Quintara online lobby with quick match and private room controls" width="49%" />
 </p>
 
+## How to play
+
+1. **Play a card.** Select a card from your hand, then claim a matching space on
+   the board. A replacement card is drawn automatically.
+2. **Build a line.** Five markers in a row — horizontal, vertical, or diagonal —
+   completes a sequence.
+3. **Protect your lines.** Completed sequences are permanent, and their markers
+   cannot be removed by One-Eyed Jacks.
+4. **Use the Jacks.** Two-Eyed Jacks (J♣ J♦) place a marker on any empty space;
+   One-Eyed Jacks (J♥ J♠) remove an unprotected opponent marker.
+5. **Win the race.** Two teams need two sequences; three or more teams need one.
+
+The in-app **Rules** page has the full reference. The normative rules live in
+`adr/game_engine_rules.md` (Rules Contract v1.0).
+
 ## Features
 
 - **Deterministic rules engine** — pure TypeScript with no UI, network, or
@@ -71,6 +115,8 @@ which is useful when both apps sit behind one domain.
   optional passwords, configurable turn timers, quick match, reconnect-safe
   sessions, idempotent actions, optimistic concurrency, and per-viewer state
   projection so opponent hands never cross the wire.
+- **No account required** — guests receive a device-scoped signed identity, so
+  a host can create a room and share an invite code immediately.
 - **Server-authoritative turn clocks** — reconnecting or reloading resumes the
   existing deadline instead of granting a fresh turn.
 - **PWA and offline play** — installable app shell, offline fallback page, and
@@ -126,6 +172,15 @@ The engine package must not import React, DOM, WebSocket, database, or CSS code.
 This boundary is what makes local play, server validation, AI simulation, and
 replay verification share the exact same rules.
 
+### Documentation
+
+- [`adr/game_engine_rules.md`](adr/game_engine_rules.md) — normative rules
+  contract (v1.0)
+- [`adr/Game_design_plan.md`](adr/Game_design_plan.md) — product and design
+  specification
+- [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — CI pipeline
+- [`docs/screenshots`](docs/screenshots) — screenshots used in this README
+
 ## npm scripts
 
 | Command | What it does |
@@ -150,9 +205,16 @@ npm run lint
 npm run build
 ```
 
-CI (`.github/workflows/ci.yml`) runs install, package builds, lint, typecheck,
-tests, and the production build on Node 20 and 22 for every push to `main` and
-every pull request.
+The suite currently contains **238 automated tests**: 192 engine, 40 server,
+and 6 AI tests. CI (`.github/workflows/ci.yml`) runs install, package builds,
+lint, typecheck, tests, and the production build on Node 20 and 22 for every
+push to `main` and every pull request.
+
+Run a single workspace suite with, for example:
+
+```bash
+npm test -w @quintara/game-engine
+```
 
 Engine coverage includes board/deck invariants, player configurations and
 interleaved turn order, normal card play, Two-Eyed and One-Eyed Jacks, dead-card
@@ -231,8 +293,8 @@ npm run start -w @quintara/web
 
 ### Hosting notes
 
-- **Web**: deploy the Next.js app to any Node/static host (Vercel, Netlify,
-  Fly.io, etc.). The service worker provides the offline shell.
+- **Web**: deploy the Next.js app to any Node host (Vercel, Fly.io, Render,
+  etc.). The service worker provides the offline shell.
 - **Server**: deploy the Fastify process to a Node host (Fly.io, Railway,
   Render, AWS, GCP). Put it behind TLS and a reverse proxy that forwards
   WebSocket upgrades.
@@ -261,8 +323,9 @@ npm run start -w @quintara/web
 - HTTP rate limits are per-process. Multi-instance deployments should add
   gateway- or Redis-backed limits.
 
-To report a security issue, please use GitHub's private security advisory flow
-rather than opening a public issue.
+To report a security issue, please use GitHub's [private security advisory
+flow](https://github.com/vskrch/Quintara/security/advisories/new) rather than
+opening a public issue.
 
 ## Project status
 
@@ -278,8 +341,9 @@ Known limitations before a mass-market competitive launch:
 - No accounts, ranked seasons, leaderboards, or skill-based matchmaking.
 - No replay viewer UI, although the replay API and storage model exist.
 - Three-player Standard games use a three-team layout and are more draw-prone
-  than 2/4/6-player games. In a 200-game HARD-bot simulation, 30.5% ended in a
-  stalemate. The UI warns about this rather than hiding the valid configuration.
+  than two-team configurations. In a 200-game HARD-bot simulation, 30.5% ended
+  in a stalemate. The UI warns about this rather than hiding the valid
+  configuration.
 - AI difficulty tiers are heuristic, not tournament-calibrated. Treat Expert as
   a strong local opponent, not a ranked benchmark.
 - Password hashing uses synchronous `scrypt`; move to async hashing or a worker
@@ -293,6 +357,52 @@ Known limitations before a mass-market competitive launch:
 - Async password hashing and distributed rate limiting
 - Load testing, observability, and multi-region deployment
 - A 3-player variant or house rule that reduces stalemates
+
+## Troubleshooting
+
+### Ports 3000 or 4000 are already in use
+
+`npm run dev` starts both services. Stop the process holding the port, then
+retry:
+
+```bash
+lsof -i :3000
+lsof -i :4000
+```
+
+### The online lobby stays disconnected
+
+The web client must be able to reach the game server. Check that the server is
+running on port 4000, and that `NEXT_PUBLIC_WS_URL` points at its WebSocket
+endpoint (for example `ws://localhost:4000/ws`). The one-command launcher sets
+this automatically.
+
+### `npm run typecheck` fails on a fresh clone
+
+The workspace packages must be compiled before other packages can resolve their
+types:
+
+```bash
+npm run build:packages
+npm run typecheck
+```
+
+`npm run build` and `npm run dev` do this for you.
+
+### macOS blocks `Start Quintara.command`
+
+Right-click the file in Finder and choose **Open**, or allow it under
+**System Settings → Privacy & Security**.
+
+### The production server refuses to start
+
+Set `QUINTARA_AUTH_SECRET` to a random value of at least 32 characters:
+
+```bash
+export QUINTARA_AUTH_SECRET="$(openssl rand -base64 48)"
+```
+
+The server rejects documented placeholder secrets in production.
 
 ## Contributing
 
