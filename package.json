@@ -17,6 +17,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "lint": "eslint .",
+    "dev": "node scripts/dev.mjs",
     "dev:web": "npm run dev -w @quintara/web",
     "dev:server": "npm run dev -w @quintara/server",
     "start:server": "npm run start -w @quintara/server",
