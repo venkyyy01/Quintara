@@ -5,6 +5,8 @@
  * WebSocket: realtime game transport (see ws.ts).
  */
 
+// Must be the first import: auth.ts reads QUINTARA_AUTH_SECRET at module load.
+import "./env.js";
 import Fastify, {
   type FastifyInstance,
   type FastifyReply,
@@ -12,6 +14,7 @@ import Fastify, {
 } from "fastify";
 import cors from "@fastify/cors";
 import { pathToFileURL } from "node:url";
+import { projectStateForViewer } from "@quintara/game-engine";
 import { registerWebSocket } from "./ws.js";
 import { buildAuthoritativeCommand, RoomLimitError, SessionManager } from "./session.js";
 import type {
@@ -31,23 +34,45 @@ const GAME_MODES: readonly GameMode[] = [
   "RANKED",
 ];
 
+/**
+ * Fastify only trusts X-Forwarded-For when told how many proxy hops to trust.
+ * Without this, every request behind the documented reverse proxy shares the
+ * proxy's IP and a single client can exhaust the global rate limit.
+ */
+function parseTrustProxy(value: string | undefined): boolean | string {
+  const raw = value?.trim();
+  if (!raw || raw === "false" || raw === "0") return false;
+  if (raw === "true") return true;
+  // Fastify accepts a hop count as a string, a single proxy address, or a
+  // comma-separated list. Do not accept arbitrary text silently.
+  if (/^\d+$/.test(raw)) return raw;
+  return raw;
+}
+
+const TRUST_PROXY = parseTrustProxy(process.env.TRUST_PROXY);
+
 const httpAttempts = new Map<string, number[]>();
 
-function allowHttp(ip: string, maxPerMinute: number): boolean {
+function allowHttp(
+  ip: string,
+  maxPerMinute: number,
+  scope = "general",
+): boolean {
   const now = Date.now();
-  const attempts = (httpAttempts.get(ip) ?? []).filter(
+  const key = `${scope}:${ip}`;
+  const attempts = (httpAttempts.get(key) ?? []).filter(
     (timestamp) => now - timestamp < 60_000,
   );
   if (attempts.length >= maxPerMinute) {
-    httpAttempts.set(ip, attempts);
+    httpAttempts.set(key, attempts);
     return false;
   }
   attempts.push(now);
-  httpAttempts.set(ip, attempts);
+  httpAttempts.set(key, attempts);
   if (httpAttempts.size > 10_000) {
-    for (const [key, value] of httpAttempts) {
+    for (const [entryKey, value] of httpAttempts) {
       if (value.every((timestamp) => now - timestamp >= 60_000)) {
-        httpAttempts.delete(key);
+        httpAttempts.delete(entryKey);
       }
     }
   }
@@ -68,6 +93,7 @@ export async function buildServer(): Promise<FastifyInstance> {
       redact: ["req.headers.authorization", "req.headers.cookie"],
     },
     bodyLimit: 64 * 1024,
+    trustProxy: TRUST_PROXY,
   });
   const sessions = new SessionManager();
 
@@ -212,7 +238,10 @@ export async function buildServer(): Promise<FastifyInstance> {
     },
   );
 
-  app.get("/api/history", async (request) => {
+  app.get("/api/history", async (request, reply) => {
+    if (!allowHttp(request.ip, 60, "history")) {
+      return reply.code(429).send({ error: "Too many requests. Wait a minute." });
+    }
     const query = request.query as { limit?: string };
     const parsed = Number(query.limit ?? 20);
     const limit = Number.isFinite(parsed)
@@ -224,6 +253,11 @@ export async function buildServer(): Promise<FastifyInstance> {
   app.get<{ Params: { gameId: string } }>(
     "/api/games/:gameId/replay",
     async (request, reply) => {
+      if (!allowHttp(request.ip, 60, "replay")) {
+        return reply
+          .code(429)
+          .send({ error: "Too many requests. Wait a minute." });
+      }
       const game = await sessions.getReplay(request.params.gameId);
       if (!game || !game.summary) {
         return reply.code(404).send({ error: "Finished game not found." });
@@ -236,11 +270,14 @@ export async function buildServer(): Promise<FastifyInstance> {
           buildAuthoritativeCommand(command, command.playerId),
         )
         .filter((command) => command !== null);
+      // Replays are public. Never return the raw initial state: it contains
+      // both hands, the draw-pile order and the RNG state. Spectator
+      // projection keeps the board, discards and public history only.
       return {
         gameId: game.gameId,
         rulesVersion: game.initialState.rulesVersion,
         rngAlgorithmVersion: game.initialState.rngVersion,
-        initialState: game.initialState,
+        initialState: projectStateForViewer(game.initialState, null),
         commands,
         events: game.events.map((event) => ({ type: event.type })),
         summary: game.summary,

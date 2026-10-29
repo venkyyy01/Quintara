@@ -314,6 +314,12 @@ export function boardDefinitionIssues(board: BoardDefinition): string[] {
       if (parsed.row !== cell.row || parsed.column !== cell.column) {
         issues.push(`cell id ${cell.id} does not match its coordinates`);
       }
+      // Sequence detection and marker lookups build canonical ids. A
+      // non-canonical alias such as "r01c1" would validate but silently break
+      // every line that crosses that cell.
+      if (cell.id !== cellId(cell.row, cell.column)) {
+        issues.push(`cell id ${cell.id} is not canonical`);
+      }
     } catch {
       issues.push(`malformed cell id ${cell.id}`);
     }

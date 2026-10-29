@@ -35,7 +35,6 @@ export const metadata: Metadata = {
     "pass and play",
     "card game",
   ],
-  alternates: { canonical: "/" },
   openGraph: {
     type: "website",
     siteName: "QUINTARA",

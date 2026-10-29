@@ -23,7 +23,8 @@ export interface PlayerHandProps {
   selectedCardId: string | null;
   canAct: boolean;
   deadExchangeAvailable: boolean;
-  onSelectCard: (cardId: string) => void;
+  /** `viaKeyboard` lets the game screen move focus to the board. */
+  onSelectCard: (cardId: string, viaKeyboard?: boolean) => void;
   onExchange: (cardId: string) => void;
 }
 
@@ -57,23 +58,23 @@ export function PlayerHand({
   );
 
   return (
-    <div className="hand-dock" role="listbox" aria-label="Your hand">
+    <div className="hand-dock" role="group" aria-label="Your hand">
       {hand.map((card: ViewerCardInfo, index) => {
+        // `card.dead` is projected for both online and local viewers. The
+        // authoritative fallback keeps older local saves working.
         const dead =
-          authoritativeState !== null
-            ? isDeadCard(
-                authoritativeState,
-                authoritativeState.cards[card.id]!,
-              )
-            : exchangeIds.has(card.id);
+          card.dead ||
+          (authoritativeState !== null &&
+            isDeadCard(
+              authoritativeState,
+              authoritativeState.cards[card.id]!,
+            ));
         const playable = canAct && legalCardIds.has(card.id);
         const exchangeable = canAct && deadExchangeAvailable && exchangeIds.has(card.id);
 
         return (
           <motion.div
             key={card.id}
-            role="option"
-            aria-selected={selectedCardId === card.id}
             initial={reduced ? false : { y: 26, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{
@@ -88,13 +89,17 @@ export function PlayerHand({
               playable={playable}
               dead={dead && !playable}
               disabled={!canAct}
-              onClick={() => canAct && onSelectCard(card.id)}
+              onClick={(event) => {
+                if (canAct) onSelectCard(card.id, event.detail === 0);
+              }}
               ariaHint={
-                dead
-                  ? "Dead card"
-                  : playable
-                    ? "Playable"
-                    : "Selected"
+                selectedCardId === card.id
+                  ? "Selected"
+                  : dead
+                    ? "Dead card"
+                    : playable
+                      ? "Playable"
+                      : "Not playable"
               }
             />
             {exchangeable && (

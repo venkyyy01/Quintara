@@ -3,11 +3,15 @@
  *
  * Offline-supported: AI, local pass-and-play and tutorial (all client-side
  * engine). Online modes detect disconnection and recover via resync.
- * Strategy: cache-first for static assets, network-first with cache fallback
- * for navigations.
+ *
+ * Strategy:
+ * - hashed build assets / icons: cache-first (immutable by name)
+ * - navigations: network-first with cache fallback, then /offline
+ * - other same-origin GETs (RSC payloads): network-first with cache fallback
+ * - API and WebSocket traffic: never cached
  */
 
-const CACHE_VERSION = "quintara-shell-v2";
+const CACHE_VERSION = "quintara-shell-v3";
 const SHELL_ASSETS = [
   "/",
   "/offline",
@@ -20,19 +24,31 @@ const SHELL_ASSETS = [
   "/play/local",
   "/play/online",
   "/stats",
+  "/settings",
+  "/privacy",
+  "/terms",
 ];
+
+const STATIC_PATH = /^\/(?:_next\/static|icons)\//;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches
-      .open(CACHE_VERSION)
-      .then((cache) => cache.addAll(SHELL_ASSETS))
+    (async () => {
+      const cache = await caches.open(CACHE_VERSION);
+      // One missing route must not abort the whole install.
+      await Promise.all(
+        SHELL_ASSETS.map(async (url) => {
+          try {
+            await cache.add(url);
+          } catch {
+            // Route unavailable at install time; fetched on first use.
+          }
+        }),
+      );
       // First install activates immediately; updates wait so the page can
       // offer a non-disruptive "new version" refresh.
-      .then(() => {
-        if (!self.registration.active) return self.skipWaiting();
-        return undefined;
-      }),
+      if (!self.registration.active) await self.skipWaiting();
+    })(),
   );
 });
 
@@ -57,6 +73,45 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+function cacheFirst(request) {
+  return caches.match(request).then((cached) => {
+    if (cached) return cached;
+    return fetch(request).then((response) => {
+      if (response.ok && response.type === "basic") {
+        const copy = response.clone();
+        caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
+      }
+      return response;
+    });
+  });
+}
+
+function networkFirst(request, fallbackToShell) {
+  return fetch(request)
+    .then((response) => {
+      if (response.ok && response.type === "basic") {
+        const copy = response.clone();
+        caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
+      }
+      return response;
+    })
+    .catch(async () => {
+      const cached = await caches.match(request);
+      if (cached) return cached;
+      if (fallbackToShell) {
+        return (
+          (await caches.match("/offline")) ??
+          (await caches.match("/")) ??
+          Response.error()
+        );
+      }
+      return new Response("Offline", {
+        status: 503,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    });
+}
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
@@ -64,38 +119,31 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // API and WebSocket upgrades are never cached.
-  if (url.pathname.startsWith("/api/")) return;
-
-  if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
-          return response;
-        })
-        .catch(async () => {
-          const cached = await caches.match(request);
-          if (cached) return cached;
-          return (
-            (await caches.match("/offline")) ?? (await caches.match("/"))
-          );
-        }),
-    );
+  // API, auth and dev HMR traffic are never cached.
+  if (
+    url.pathname.startsWith("/api/") ||
+    url.pathname.startsWith("/ws") ||
+    url.pathname.startsWith("/_next/webpack-hmr")
+  ) {
     return;
   }
 
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
-        if (response.ok && response.type === "basic") {
-          const copy = response.clone();
-          caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
-        }
-        return response;
-      });
-    }),
-  );
+  if (request.mode === "navigate") {
+    event.respondWith(networkFirst(request, true));
+    return;
+  }
+
+  if (
+    STATIC_PATH.test(url.pathname) ||
+    url.pathname === "/icon.svg" ||
+    url.pathname === "/manifest.webmanifest" ||
+    ["style", "script", "font", "image"].includes(request.destination)
+  ) {
+    event.respondWith(cacheFirst(request));
+    return;
+  }
+
+  // RSC payloads and other same-origin data: fresh when online, cached when
+  // offline so visited routes remain usable.
+  event.respondWith(networkFirst(request, false));
 });

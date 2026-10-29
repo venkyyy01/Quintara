@@ -106,6 +106,7 @@ Copy `.env.example` to the relevant location as a starting point.
 | `HOST`                 | Bind address                                         | `0.0.0.0`               |
 | `CORS_ORIGIN`          | Comma-separated allowed origins, or `true` in dev    | `http://localhost:3000` |
 | `QUINTARA_AUTH_SECRET` | HMAC secret for player tokens (≥32 chars in prod)    | ephemeral (dev only)    |
+| `TRUST_PROXY`          | Trusted proxy hops or proxy IPs for client-IP limits | unset (direct)          |
 
 `QUINTARA_AUTH_SECRET` is mandatory when `NODE_ENV=production`: the server
 refuses to boot without it. A permissive CORS setting (`CORS_ORIGIN=true`)
@@ -170,6 +171,9 @@ v1.0); product and design specifications live in `adr/Game_design_plan.md`.
   in-memory store is the single-instance default).
 - Set `QUINTARA_AUTH_SECRET` (≥32 characters), `CORS_ORIGIN`,
   `NEXT_PUBLIC_WS_URL` and `NEXT_PUBLIC_SITE_URL` for the target environment.
+  Set `TRUST_PROXY` to the number of trusted reverse-proxy hops (or a
+  comma-separated proxy IP list) so per-IP rate limits see real client
+  addresses. Leave it unset when the server is directly exposed.
 - Put the server behind TLS (`wss://`) and a reverse proxy that forwards
   WebSocket upgrades. The process handles `SIGTERM`/`SIGINT` with a graceful
   shutdown.
@@ -193,3 +197,6 @@ v1.0); product and design specifications live in `adr/Game_design_plan.md`.
   ranked benchmark.
 - Online rooms are ephemeral. A server restart ends active online matches;
   local save/resume is intentionally local-only.
+- Public history lists only public-room results. Private-room summaries stay
+  replayable by their unguessable game ID for participants, but their player
+  names are not published in the shared history feed.

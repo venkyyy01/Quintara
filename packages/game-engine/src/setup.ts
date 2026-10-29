@@ -301,7 +301,10 @@ export function createGame(options: CreateGameOptions): GameState {
   validateBoardDefinition(boardDefinition);
 
   const isCustomConfig =
-    options.handSize !== undefined || options.requiredSequences !== undefined;
+    options.handSize !== undefined ||
+    options.requiredSequences !== undefined ||
+    options.allowDeadCardExchange === false ||
+    options.turnDurationMs != null;
   const rulesVersion =
     options.rulesVersion ??
     (isCustomConfig ? CUSTOM_RULES_VERSION : RULES_VERSION);

@@ -63,6 +63,8 @@ export interface GameScreenProps {
   neutralResult?: boolean;
   /** Online turn countdown, when the room enforces a timer. */
   turnTimer?: { remainingMs: number; totalMs: number } | null;
+  /** Online: block board/hand input while the socket is reconnecting. */
+  interactionDisabled?: boolean;
   onSelectCard: (cardId: string) => void;
   onCellClick: (cellId: CellId) => void;
   onExchange: (cardId: string) => void;
@@ -86,6 +88,7 @@ export function GameScreen(props: GameScreenProps) {
     hideRematch,
     neutralResult,
     turnTimer,
+    interactionDisabled = false,
     selectedCardId,
   } = props;
 
@@ -147,6 +150,29 @@ export function GameScreen(props: GameScreenProps) {
     : viewerIsActing
       ? "Select a card from your hand."
       : "";
+
+  // Keyboard users should not have to Shift+Tab back through the page after
+  // choosing a card. A keyboard activation jumps focus to the first legal
+  // space; pointer activation leaves focus where the user clicked.
+  function handleSelectCard(cardId: string, viaKeyboard = false): void {
+    const wasSelected = selectedCardId === cardId;
+    props.onSelectCard(cardId);
+    if (!viaKeyboard || wasSelected || interactionDisabled) return;
+    const target =
+      projected.legalActions?.mainActions.find(
+        (action) =>
+          action.cardId === cardId && action.type !== "PLAY_REMOVE_JACK",
+      )?.targetCellId ??
+      projected.legalActions?.mainActions.find(
+        (action) => action.cardId === cardId,
+      )?.targetCellId;
+    if (!target) return;
+    window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLButtonElement>(`[data-cell-id="${target}"]`)
+        ?.focus();
+    });
+  }
 
   return (
     <div
@@ -220,6 +246,8 @@ export function GameScreen(props: GameScreenProps) {
               <SequenceSelectionPanel
                 options={sequenceSelection.options}
                 onSelect={sequenceSelection.onSelect}
+                onUseDefault={sequenceSelection.onUseDefault}
+                disabled={interactionDisabled}
               />
             </div>
           )}
@@ -231,6 +259,7 @@ export function GameScreen(props: GameScreenProps) {
             showLegalMoves={showLegalMoves}
             animationSpeed={animationSpeed}
             lastPlacedCellId={lastPlacedCellId}
+            disabled={interactionDisabled}
             onCellClick={props.onCellClick}
           />
           <SequenceTraceOverlay projected={projected} speed={animationSpeed} />
@@ -264,12 +293,16 @@ export function GameScreen(props: GameScreenProps) {
             projected={projected}
             authoritativeState={authoritativeState}
             selectedCardId={selectedCardId}
-            canAct={viewerIsActing && projected.status === "ACTIVE"}
+            canAct={
+              viewerIsActing &&
+              projected.status === "ACTIVE" &&
+              !interactionDisabled
+            }
             deadExchangeAvailable={
               (projected.legalActions?.deadExchanges.length ?? 0) > 0 &&
               !projected.deadCardExchangeUsed
             }
-            onSelectCard={props.onSelectCard}
+            onSelectCard={handleSelectCard}
             onExchange={props.onExchange}
           />
         </div>

@@ -32,7 +32,7 @@ export interface PlayingCardProps {
   dead?: boolean;
   disabled?: boolean;
   compact?: boolean;
-  onClick?: () => void;
+  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
   ariaHint?: string;
 }
 
@@ -76,7 +76,7 @@ export function PlayingCard({
         padding: compact ? "4px" : "6px",
       }}
       onClick={onClick}
-      disabled={disabled && !onClick}
+      disabled={disabled}
       aria-label={description}
       aria-pressed={selected}
     >

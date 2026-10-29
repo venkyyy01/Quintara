@@ -74,6 +74,8 @@ interface LocalSave {
   readonly mode: LocalMode;
   readonly seats: LocalSeat[];
   readonly difficulty: AiDifficulty;
+  /** Preserved so a reloaded Daily Challenge rematch stays on the daily seed. */
+  readonly seed: string | null;
   readonly state: GameState;
   readonly savedAt: string;
 }
@@ -131,6 +133,9 @@ function loadSave(): LocalSave | null {
       !isLocalMode(parsed.mode) ||
       !isSeatList(parsed.seats) ||
       !isDifficulty(parsed.difficulty) ||
+      (parsed.seed !== undefined &&
+        parsed.seed !== null &&
+        typeof parsed.seed !== "string") ||
       typeof parsed.state !== "object" ||
       parsed.state === null ||
       parsed.state.status !== "ACTIVE" ||
@@ -335,6 +340,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
           mode,
           seats,
           difficulty,
+          seed: get().seed,
           state: next,
           savedAt: new Date().toISOString(),
         });
@@ -565,6 +571,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
         mode: saved.mode,
         seats: saved.seats,
         difficulty: saved.difficulty,
+        seed: saved.seed ?? null,
         state: saved.state,
         selectedCardId: null,
         awaitingHandoff: saved.mode === "PASS_AND_PLAY",

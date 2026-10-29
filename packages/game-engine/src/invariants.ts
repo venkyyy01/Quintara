@@ -120,6 +120,17 @@ export function validateGameState(state: GameState): string[] {
         `requiredSequences is ${state.requiredSequences}, expected ${expectedRequired}`,
       );
     }
+    // The Standard preset is immutable: optional custom rules must never be
+    // smuggled in under the Standard rulesVersion.
+    if (state.rulesConfig.allowDeadCardExchange !== true) {
+      issues.push("Standard games must allow the dead-card exchange");
+    }
+    if (state.rulesConfig.maxDeadCardExchangesPerTurn !== 1) {
+      issues.push("Standard games allow exactly one dead-card exchange per turn");
+    }
+    if (state.rulesConfig.turnDurationMs !== null) {
+      issues.push("Standard games must not carry a custom turn timer");
+    }
   }
 
   // Status/turn-phase consistency (§157).

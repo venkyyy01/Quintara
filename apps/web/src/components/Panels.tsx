@@ -232,6 +232,11 @@ export function TurnBanner({
           {remainingSeconds}s
         </span>
       )}
+      {remainingSeconds !== null && projected.status === "ACTIVE" && (
+        <span className="sr-only">
+          {remainingSeconds} seconds left in this turn
+        </span>
+      )}
     </div>
   );
 }

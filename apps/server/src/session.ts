@@ -89,7 +89,11 @@ interface Room {
   botContexts: Map<string, BotContext>;
   turnTimer: ReturnType<typeof setTimeout> | null;
   botTimer: ReturnType<typeof setTimeout> | null;
+  /** Absolute deadline for the current turn, or null when untimed. */
+  turnDeadlineAt: number | null;
   createdAt: number;
+  /** Last meaningful state change; drives idle-room TTLs. */
+  lastActivityAt: number;
 }
 
 export interface SessionSink {
@@ -115,6 +119,10 @@ const PENDING_ROOM_GRACE_MS = 1000 * 30;
 const LOBBY_TTL_MS = 1000 * 60 * 30;
 const FINISHED_TTL_MS = 1000 * 60 * 60 * 2;
 const QUICK_QUEUE_TTL_MS = 1000 * 60 * 2;
+/** Public quick matches need a deadline; otherwise one AFK player stalls it. */
+const QUICK_MATCH_TURN_MS = 1000 * 120;
+/** A disconnected player's turn is auto-resolved after this short delay. */
+const DISCONNECTED_TURN_MS = 1000 * 10;
 const MAX_ROOM_PLAYERS = 12;
 const MAX_AI_SEATS = 11;
 const MAX_ROOMS = 1000;
@@ -148,11 +156,15 @@ function hashPassword(password: string): string {
 }
 
 function verifyPassword(stored: string | null, candidate: unknown): boolean {
-  if (!stored || typeof candidate !== "string") return false;
+  if (!stored) return false;
+  // Creation trims and caps the password; verification must apply the exact
+  // same normalisation or long/whitespace-padded passwords become unjoinable.
+  const normalised = normalisePassword(candidate);
+  if (!normalised) return false;
   const [salt, expectedHex] = stored.split(":");
   if (!salt || !expectedHex) return false;
   const expected = Buffer.from(expectedHex, "hex");
-  const actual = scryptSync(candidate, salt, expected.length);
+  const actual = scryptSync(normalised, salt, expected.length);
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
@@ -176,6 +188,12 @@ function stableCommandPayload(command: GameCommand | ClientGameCommand): string 
     .sort()
     .map((key) => [key, record[key]]);
   return createHash("sha256").update(JSON.stringify(ordered)).digest("hex");
+}
+
+function disconnectKey(roomId: string, playerId: string): string {
+  // A player can have a timer for more than one abandoned room while moving
+  // between lobbies; a player-only key silently cancelled the older timer.
+  return `${roomId}:${playerId}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -314,11 +332,19 @@ export class SessionManager {
         this.quickQueue.splice(i, 1);
       }
     }
+    // Guest identities are cheap and unbounded; prune old creation windows.
+    for (const [playerId, timestamps] of this.roomCreationLog) {
+      const recent = timestamps.filter((timestamp) => now - timestamp < 60_000);
+      if (recent.length === 0) this.roomCreationLog.delete(playerId);
+      else if (recent.length !== timestamps.length) {
+        this.roomCreationLog.set(playerId, recent);
+      }
+    }
     for (const room of [...this.rooms.values()]) {
-      const age = now - room.createdAt;
+      const idleFor = now - room.lastActivityAt;
       if (
-        (room.status === "LOBBY" && age > LOBBY_TTL_MS) ||
-        (room.status === "FINISHED" && age > FINISHED_TTL_MS)
+        (room.status === "LOBBY" && idleFor > LOBBY_TTL_MS) ||
+        (room.status === "FINISHED" && idleFor > FINISHED_TTL_MS)
       ) {
         this.disposeRoom(room);
         continue;
@@ -328,12 +354,26 @@ export class SessionManager {
       if (
         room.status === "LOBBY" &&
         room.game === null &&
-        age > PENDING_ROOM_GRACE_MS &&
+        idleFor > PENDING_ROOM_GRACE_MS &&
         !room.players.some(
           (p) =>
             !p.isAi &&
             (p.connection === "CONNECTED" ||
-              this.disconnectTimers.has(p.playerId)),
+              this.disconnectTimers.has(disconnectKey(room.id, p.playerId))),
+        ) &&
+        room.spectators.size === 0
+      ) {
+        this.disposeRoom(room);
+        continue;
+      }
+      // Safety net for lost/legacy timers: an active room with no connected
+      // humans and no spectator is dead weight. Its disconnect timers should
+      // normally dispose it first.
+      if (
+        room.status === "ACTIVE" &&
+        idleFor > RECONNECT_GRACE_MS + 10_000 &&
+        !room.players.some(
+          (p) => !p.isAi && p.connection === "CONNECTED",
         ) &&
         room.spectators.size === 0
       ) {
@@ -459,7 +499,9 @@ export class SessionManager {
       botContexts: new Map(),
       turnTimer: null,
       botTimer: null,
+      turnDeadlineAt: null,
       createdAt: Date.now(),
+      lastActivityAt: Date.now(),
     };
 
     for (let i = 0; i < options.aiSeats; i++) {
@@ -478,6 +520,11 @@ export class SessionManager {
     this.rooms.set(room.id, room);
     this.roomsByCode.set(room.code, room);
     this.roomByPlayer.set(hostPlayerId, room.id);
+    if (!hostConnected) {
+      // REST-created host: hold the seat only long enough for the client to
+      // authenticate over the socket.
+      this.scheduleDisconnect(room, hostPlayerId, PENDING_ROOM_GRACE_MS);
+    }
     return this.roomState(room);
   }
 
@@ -522,6 +569,12 @@ export class SessionManager {
       }
       existing.connection = connected ? "CONNECTED" : "RECONNECTING";
       this.roomByPlayer.set(playerId, room.id);
+      if (connected) {
+        this.clearDisconnectTimer(room.id, playerId);
+      } else {
+        this.scheduleDisconnect(room, playerId, PENDING_ROOM_GRACE_MS);
+      }
+      room.lastActivityAt = Date.now();
       this.broadcastRoomState(room);
       return { room: this.roomState(room) };
     }
@@ -554,6 +607,12 @@ export class SessionManager {
       connection: connected ? "CONNECTED" : "RECONNECTING",
     });
     this.roomByPlayer.set(playerId, room.id);
+    room.lastActivityAt = Date.now();
+    if (!connected) {
+      // A REST join reserves a seat but must not block the lobby forever if
+      // the client never opens a socket.
+      this.scheduleDisconnect(room, playerId, PENDING_ROOM_GRACE_MS);
+    }
     this.broadcastRoomState(room);
     return { room: this.roomState(room) };
   }
@@ -573,16 +632,21 @@ export class SessionManager {
     ) {
       return { error: "Room not found or password incorrect." };
     }
+    if (room.players.some((player) => player.playerId === playerId)) {
+      return { error: "You are already a player in this room." };
+    }
     if (this.roomByPlayer.get(playerId) !== room.id) {
       this.leaveRoom(playerId);
     }
     room.spectators.add(playerId);
     this.roomByPlayer.set(playerId, room.id);
+    room.lastActivityAt = Date.now();
     this.sink.send(playerId, { type: "ROOM_STATE", room: this.roomState(room) });
     if (room.game) {
       this.sink.send(playerId, {
         type: "GAME_STATE",
         state: projectStateForViewer(room.game.currentState, null),
+        turnDeadlineAt: room.turnDeadlineAt,
       });
     }
     return {};
@@ -597,11 +661,7 @@ export class SessionManager {
     if (!room) return;
 
     room.spectators.delete(playerId);
-    const pendingDisconnect = this.disconnectTimers.get(playerId);
-    if (pendingDisconnect) {
-      clearTimeout(pendingDisconnect);
-      this.disconnectTimers.delete(playerId);
-    }
+    this.clearDisconnectTimer(room.id, playerId);
     const player = room.players.find((p) => p.playerId === playerId);
     if (player && !player.isAi) {
       if (room.status === "ACTIVE") {
@@ -617,17 +677,31 @@ export class SessionManager {
     }
     if (room.hostPlayerId === playerId) this.promoteHost(room, playerId);
     this.roomByPlayer.delete(playerId);
+    room.lastActivityAt = Date.now();
     this.broadcastRoomState(room);
     this.sweepIfEmpty(room);
   }
 
-  private scheduleDisconnect(room: Room, playerId: string): void {
-    const existing = this.disconnectTimers.get(playerId);
-    if (existing) clearTimeout(existing);
+  private clearDisconnectTimer(roomId: string, playerId: string): void {
+    const key = disconnectKey(roomId, playerId);
+    const existing = this.disconnectTimers.get(key);
+    if (existing) {
+      clearTimeout(existing);
+      this.disconnectTimers.delete(key);
+    }
+  }
+
+  private scheduleDisconnect(
+    room: Room,
+    playerId: string,
+    graceMs = RECONNECT_GRACE_MS,
+  ): void {
+    this.clearDisconnectTimer(room.id, playerId);
+    const key = disconnectKey(room.id, playerId);
     this.disconnectTimers.set(
-      playerId,
+      key,
       setTimeout(() => {
-        this.disconnectTimers.delete(playerId);
+        this.disconnectTimers.delete(key);
         const current = room.players.find((p) => p.playerId === playerId);
         if (!current || current.connection !== "RECONNECTING") return;
         if (room.status === "LOBBY") {
@@ -635,10 +709,21 @@ export class SessionManager {
         } else {
           current.connection = "DISCONNECTED";
         }
+        room.lastActivityAt = Date.now();
         if (room.hostPlayerId === playerId) this.promoteHost(room, playerId);
         this.broadcastRoomState(room);
+        // A disconnected player whose turn comes up must not stall a
+        // timerless room. Resolve the turn after a short visible delay, but
+        // never restart the clock because an idle bystander dropped.
+        if (
+          room.status === "ACTIVE" &&
+          room.game !== null &&
+          currentPlayerId(room.game.currentState) === playerId
+        ) {
+          this.afterAction(room);
+        }
         this.sweepIfEmpty(room);
-      }, RECONNECT_GRACE_MS),
+      }, graceMs),
     );
   }
 
@@ -646,6 +731,10 @@ export class SessionManager {
     room.players = room.players.filter(
       (p) => p.playerId !== playerId || p.isAi,
     );
+    if (this.roomByPlayer.get(playerId) === room.id) {
+      this.roomByPlayer.delete(playerId);
+    }
+    this.clearDisconnectTimer(room.id, playerId);
   }
 
   private promoteHost(room: Room, departingId?: string): void {
@@ -672,14 +761,38 @@ export class SessionManager {
     if (!player) return;
 
     if (connected) {
-      const timer = this.disconnectTimers.get(playerId);
-      if (timer) {
-        clearTimeout(timer);
-        this.disconnectTimers.delete(playerId);
-      }
+      this.clearDisconnectTimer(room.id, playerId);
       player.connection = "CONNECTED";
+      room.lastActivityAt = Date.now();
+      // Reconnecting as the active seat must resume the existing deadline,
+      // not restart it. Otherwise refreshing the page grants a fresh turn
+      // clock every time. Non-active seats never touch the clock.
+      const game = room.game;
+      if (game && currentPlayerId(game.currentState) === playerId) {
+        if (room.turnDeadlineAt !== null) {
+          const remaining = room.turnDeadlineAt - Date.now();
+          if (room.turnTimer) {
+            clearTimeout(room.turnTimer);
+            room.turnTimer = null;
+          }
+          if (remaining <= 0) {
+            this.runTimeoutAction(room);
+          } else {
+            room.turnTimer = setTimeout(
+              () => this.runTimeoutAction(room),
+              remaining,
+            );
+          }
+        } else if (room.turnTimer) {
+          // Untimed room: cancel the short auto-resolution clock armed while
+          // this seat was offline.
+          clearTimeout(room.turnTimer);
+          room.turnTimer = null;
+        }
+      }
     } else {
       player.connection = "RECONNECTING";
+      room.lastActivityAt = Date.now();
       this.scheduleDisconnect(room, playerId);
     }
     this.broadcastRoomState(room);
@@ -729,9 +842,11 @@ export class SessionManager {
     }
     this.rooms.delete(room.id);
     this.roomsByCode.delete(room.code);
-    // In-memory games are not needed after the room is gone; durable stores
-    // can implement deleteGame as a no-op or archive.
-    void this.store.deleteGame(room.id).catch(() => {});
+    // Preserve finished replays for history; only discard an unfinished
+    // game's working state. The bounded store evicts old games eventually.
+    if (room.status !== "FINISHED" && room.game) {
+      void this.store.deleteGame(room.game.gameId).catch(() => {});
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -740,6 +855,21 @@ export class SessionManager {
 
   joinQuickMatch(playerId: string, displayName: string): void {
     this.ensureJanitor();
+    // Joining matchmaking must never silently abandon an existing room.
+    // Players who want to leave a lobby/game must do so explicitly first.
+    if (this.getRoomForPlayer(playerId)) {
+      this.sink.send(playerId, {
+        type: "ERROR",
+        code: "ALREADY_IN_ROOM",
+        message: "Leave your current room before searching for a match.",
+      });
+      this.sink.send(playerId, {
+        type: "MATCHMAKING_STATUS",
+        queued: false,
+        estimatedWaitMs: null,
+      });
+      return;
+    }
     if (!this.quickQueue.some((entry) => entry.playerId === playerId)) {
       this.quickQueue.push({ playerId, displayName, queuedAt: Date.now() });
     }
@@ -767,11 +897,24 @@ export class SessionManager {
       { playerId: string; displayName: string; queuedAt: number },
       { playerId: string; displayName: string; queuedAt: number },
     ];
+    // A player may have joined/created a room after queuing. Never create a
+    // second membership implicitly.
+    if (this.getRoomForPlayer(a.playerId) || this.getRoomForPlayer(b.playerId)) {
+      for (const entry of [a, b]) {
+        this.sink.send(entry.playerId, {
+          type: "MATCHMAKING_STATUS",
+          queued: false,
+          estimatedWaitMs: null,
+        });
+      }
+      return;
+    }
     const room = this.rooms.get(
       // createRoom registers everything we need.
       this.createRoom(a.playerId, a.displayName, "QUICK_MATCH", {
         playerCount: 2,
         isPublic: true,
+        turnDurationMs: QUICK_MATCH_TURN_MS,
       }).roomId,
     );
     if (!room) return;
@@ -829,7 +972,8 @@ export class SessionManager {
     let started: GameState;
     try {
       const created = createGame({
-        gameId: room.id,
+        // A rematch must be a new replay, not overwrite the previous one.
+        gameId: `${room.id}:${randomUUID()}`,
         players: room.players.map((p) => ({
           id: p.playerId,
           name: p.displayName,
@@ -852,7 +996,7 @@ export class SessionManager {
     }
 
     const game: StoredGame = {
-      gameId: room.id,
+      gameId: started.id,
       roomId: room.id,
       initialState: started,
       currentState: started,
@@ -865,11 +1009,14 @@ export class SessionManager {
 
     room.game = game;
     room.status = "ACTIVE";
+    room.lastActivityAt = Date.now();
     room.botContexts.clear();
 
+    // Arm the first turn before broadcasting so the message carries the
+    // deadline that matches the state.
+    this.afterAction(room);
     this.broadcastGameState(room);
     this.broadcastRoomState(room);
-    this.afterAction(room);
     return {};
   }
 
@@ -929,6 +1076,7 @@ export class SessionManager {
       game.currentState = result.state;
       game.commands.push(authoritative);
       game.events.push(...(result.events as DomainEvent[]));
+      room.lastActivityAt = Date.now();
       game.processedActions.set(actionKey, {
         actionId: actionKey,
         playerId,
@@ -939,15 +1087,17 @@ export class SessionManager {
       });
       this.persistGame(game);
 
-      // Broadcast per-viewer projections (§88) — never raw state (§23).
-      this.broadcastGameState(room, result.events as DomainEvent[]);
-
       if (result.state.status === "FINISHED") {
         room.status = "FINISHED";
         this.finalizeGame(room);
       } else {
+        // Arm the next turn before broadcasting so the message carries the
+        // new deadline rather than the previous turn's expired one.
         this.afterAction(room);
       }
+
+      // Broadcast per-viewer projections (§88) — never raw state (§23).
+      this.broadcastGameState(room, result.events as DomainEvent[]);
 
       return { ok: true, version: result.state.version };
     } catch (error) {
@@ -977,6 +1127,7 @@ export class SessionManager {
     this.sink.send(playerId, {
       type: "GAME_STATE",
       state: projectStateForViewer(game.currentState, viewerId),
+      turnDeadlineAt: room.turnDeadlineAt,
     });
     this.sink.send(playerId, { type: "ROOM_STATE", room: this.roomState(room) });
   }
@@ -994,6 +1145,7 @@ export class SessionManager {
     }
     room.status = "LOBBY";
     room.game = null;
+    room.lastActivityAt = Date.now();
     this.broadcastRoomState(room);
     const started = this.startGame(roomId, room.hostPlayerId);
     return started.error ? { error: started.error } : { ok: true };
@@ -1006,10 +1158,15 @@ export class SessionManager {
   /** Runs after every action: bots, turn timers (§94). */
   private afterAction(room: Room): void {
     const game = room.game;
-    if (!game || game.currentState.status !== "ACTIVE") return;
+    if (!game || game.currentState.status !== "ACTIVE") {
+      room.turnDeadlineAt = null;
+      return;
+    }
 
     if (room.botTimer) clearTimeout(room.botTimer);
     if (room.turnTimer) clearTimeout(room.turnTimer);
+    room.turnTimer = null;
+    room.turnDeadlineAt = null;
 
     const activeId = currentPlayerId(game.currentState);
     if (!activeId) return;
@@ -1020,8 +1177,25 @@ export class SessionManager {
       return;
     }
 
+    if (activePlayer && activePlayer.connection !== "CONNECTED") {
+      // The active seat is offline. Give a reconnecting player the normal
+      // grace window, but never leave the table waiting forever — even when
+      // the room was created with "no timer".
+      const delay =
+        activePlayer.connection === "DISCONNECTED"
+          ? DISCONNECTED_TURN_MS
+          : RECONNECT_GRACE_MS;
+      room.turnDeadlineAt = Date.now() + delay;
+      room.turnTimer = setTimeout(
+        () => this.runTimeoutAction(room),
+        delay,
+      );
+      return;
+    }
+
     const duration = room.options.turnDurationMs;
     if (duration) {
+      room.turnDeadlineAt = Date.now() + duration;
       room.turnTimer = setTimeout(
         () => this.runTimeoutAction(room),
         duration,
@@ -1159,6 +1333,7 @@ export class SessionManager {
       totalTurns: state.turnNumber,
       winnerTeamId,
       resultType: state.resultType ?? "WIN",
+      isPublic: room.options.isPublic,
       players: state.players.map((player) => {
         const teamId = getPlayer(state, player.id).teamId;
         return {
@@ -1170,10 +1345,14 @@ export class SessionManager {
       }),
     };
     game.summary = summary;
+    room.lastActivityAt = Date.now();
     this.persistGame(game);
     void this.store.saveSummary(summary).catch(() => {});
     if (room.botTimer) clearTimeout(room.botTimer);
     if (room.turnTimer) clearTimeout(room.turnTimer);
+    room.botTimer = null;
+    room.turnTimer = null;
+    room.turnDeadlineAt = null;
   }
 
   private broadcastRoomState(room: Room): void {
@@ -1194,6 +1373,7 @@ export class SessionManager {
       this.sink.send(player.playerId, {
         type: "GAME_STATE",
         state: projectStateForViewer(game.currentState, player.playerId),
+        turnDeadlineAt: room.turnDeadlineAt,
       });
       if (events && events.length > 0) {
         this.sink.send(player.playerId, {
@@ -1207,6 +1387,7 @@ export class SessionManager {
       this.sink.send(spectator, {
         type: "GAME_STATE",
         state: projectStateForViewer(game.currentState, null),
+        turnDeadlineAt: room.turnDeadlineAt,
       });
       if (events && events.length > 0) {
         this.sink.send(spectator, {
@@ -1259,7 +1440,9 @@ export class SessionManager {
   }
 
   async listHistory(limit = 20): Promise<GameSummary[]> {
-    return this.store.listSummaries(limit);
+    // Private-room results remain replayable by their unguessable game id for
+    // participants, but their player names must not appear in a public feed.
+    return this.store.listSummaries(limit, { publicOnly: true });
   }
 
   async getReplay(gameId: string) {

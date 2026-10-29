@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from "react";
 import { useSettings } from "@/lib/settings";
+import { startMusic } from "@/lib/sound";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -24,8 +25,16 @@ export function PwaBootstrap() {
     hydrate();
 
     let refreshing = false;
+    // A first install claims the page and fires controllerchange. Reloading
+    // there is pointless (and can loop); only reload when replacing a worker
+    // that was already controlling this page.
+    let canReload = Boolean(navigator.serviceWorker?.controller);
     let visibilityHandler: (() => void) | null = null;
     const onControllerChange = () => {
+      if (!canReload) {
+        canReload = true;
+        return;
+      }
       if (refreshing) return;
       refreshing = true;
       window.location.reload();
@@ -85,6 +94,23 @@ export function PwaBootstrap() {
     applyReducedMotion();
     const unsubscribe = useSettings.subscribe(applyReducedMotion);
 
+    // Browsers refuse to start an AudioContext before a gesture. Hydration
+    // restores the user's music preference, then the first interaction starts
+    // the ambient pad if both master and music volumes are above zero.
+    let musicArmed = false;
+    const startMusicOnGesture = () => {
+      if (musicArmed) return;
+      musicArmed = true;
+      const { masterVolume, musicVolume } = useSettings.getState();
+      if (masterVolume > 0 && musicVolume > 0) startMusic();
+      window.removeEventListener("pointerdown", startMusicOnGesture);
+      window.removeEventListener("keydown", startMusicOnGesture);
+    };
+    window.addEventListener("pointerdown", startMusicOnGesture, {
+      passive: true,
+    });
+    window.addEventListener("keydown", startMusicOnGesture);
+
     const onPrompt = (event: Event) => {
       event.preventDefault();
       setInstallEvent(event as BeforeInstallPromptEvent);
@@ -92,6 +118,8 @@ export function PwaBootstrap() {
     window.addEventListener("beforeinstallprompt", onPrompt);
     return () => {
       window.removeEventListener("beforeinstallprompt", onPrompt);
+      window.removeEventListener("pointerdown", startMusicOnGesture);
+      window.removeEventListener("keydown", startMusicOnGesture);
       if (visibilityHandler) {
         document.removeEventListener("visibilitychange", visibilityHandler);
       }

@@ -32,6 +32,8 @@ export interface GameBoardProps {
   showLegalMoves: boolean;
   animationSpeed: number;
   lastPlacedCellId?: CellId | null;
+  /** Online reconnect: keep the board readable but inert. */
+  disabled?: boolean;
   onCellClick: (cellId: CellId) => void;
 }
 
@@ -43,6 +45,7 @@ export function GameBoard({
   showLegalMoves,
   animationSpeed,
   lastPlacedCellId = null,
+  disabled = false,
   onCellClick,
 }: GameBoardProps) {
   const reduced = useReducedMotion();
@@ -143,6 +146,7 @@ export function GameBoard({
         aria-describedby="board-instructions"
         aria-rowcount={projected.boardDefinition.height}
         aria-colcount={projected.boardDefinition.width}
+        aria-busy={disabled || undefined}
       >
         {rows.map((rowCells) => (
           <div key={rowCells[0]?.row ?? 0} role="row" className="board-row">
@@ -185,10 +189,11 @@ export function GameBoard({
                   }}
                   type="button"
                   role="gridcell"
+                  data-cell-id={cell.id}
                   aria-rowindex={cell.row + 1}
                   aria-colindex={cell.column + 1}
                   aria-label={label}
-                  aria-disabled={!isLegal && !isRemovable}
+                  aria-disabled={disabled || (!isLegal && !isRemovable)}
                   tabIndex={focusedCellId === cell.id ? 0 : -1}
                   className={classes}
                   onFocus={() => setFocusedCellId(cell.id)}
@@ -198,10 +203,13 @@ export function GameBoard({
                   onClick={() => {
                     // Callers decide whether a non-target cell is a no-op or
                     // explanatory feedback (the tutorial uses the latter).
-                    onCellClick(cell.id);
+                    if (!disabled) onCellClick(cell.id);
                   }}
                   style={{
-                    cursor: isLegal || isRemovable ? "pointer" : "default",
+                    cursor:
+                      disabled || (!isLegal && !isRemovable)
+                        ? "default"
+                        : "pointer",
                     opacity: dimmed ? 0.38 : 1,
                   }}
                 >

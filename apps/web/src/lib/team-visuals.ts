@@ -19,26 +19,29 @@ const TEAM_VISUALS: Record<string, TeamVisual> = {
     textClass: "text-[#7cabff]",
     ringColor: "#3f83f8",
   },
+  // Keep these aligned with INDIVIDUAL_TEAM_NAMES in the engine:
+  // Blue, Gold, Red, Green. Accessible marker labels name the same colour
+  // that is actually rendered.
   "team-2": {
-    color: "var(--color-team-red)",
+    color: "var(--color-team-gold)",
     symbol: "diamond",
+    markerClass: "marker-gold",
+    textClass: "text-[#e3b341]",
+    ringColor: "#e3b341",
+  },
+  "team-3": {
+    color: "var(--color-team-red)",
+    symbol: "triangle",
     markerClass: "marker-red",
     textClass: "text-[#ff8b88]",
     ringColor: "#ef5350",
   },
-  "team-3": {
+  "team-4": {
     color: "var(--color-team-green)",
-    symbol: "triangle",
+    symbol: "square",
     markerClass: "marker-green",
     textClass: "text-[#7fdcb0]",
     ringColor: "#4fc18c",
-  },
-  "team-4": {
-    color: "var(--color-team-gold)",
-    symbol: "square",
-    markerClass: "marker-gold",
-    textClass: "text-[#e3b341]",
-    ringColor: "#e3b341",
   },
 };
 

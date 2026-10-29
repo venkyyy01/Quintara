@@ -9,12 +9,38 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 const CONFIGURED_SECRET = process.env.QUINTARA_AUTH_SECRET?.trim();
 
+/**
+ * Values shipped in documentation, examples or scaffolding must never be
+ * accepted as a real signing key. Without this check the example value in
+ * `.env.example` (which is long enough to pass a length test) would let
+ * anyone forge a guest token for another player.
+ */
+const PLACEHOLDER_SECRETS = new Set([
+  "replace-with-a-long-random-string",
+  "change-me",
+  "changeme",
+  "secret",
+  "your-secret-here",
+  "development-secret",
+]);
+
 if (
   process.env.NODE_ENV === "production" &&
-  (!CONFIGURED_SECRET || CONFIGURED_SECRET.length < 32)
+  (!CONFIGURED_SECRET ||
+    CONFIGURED_SECRET.length < 32 ||
+    PLACEHOLDER_SECRETS.has(CONFIGURED_SECRET.toLowerCase()))
 ) {
   throw new Error(
-    "QUINTARA_AUTH_SECRET must be set to at least 32 characters in production.",
+    "QUINTARA_AUTH_SECRET must be a non-placeholder secret of at least 32 characters in production.",
+  );
+}
+
+if (
+  CONFIGURED_SECRET &&
+  PLACEHOLDER_SECRETS.has(CONFIGURED_SECRET.toLowerCase())
+) {
+  console.warn(
+    "[quintara] QUINTARA_AUTH_SECRET is a documented placeholder — set a real random secret before deploying.",
   );
 }
 

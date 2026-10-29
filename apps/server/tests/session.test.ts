@@ -565,6 +565,122 @@ describe("timeout resolves exchange-only turns (§75, §94)", () => {
   });
 });
 
+describe("room lifecycle hardening", () => {
+  it("normalises long and whitespace-padded passwords consistently", () => {
+    const sessions = new SessionManager();
+    const password = `  ${"x".repeat(80)}  `;
+    const room = sessions.createRoom("host", "Host", "PRIVATE", {
+      playerCount: 2,
+      password,
+    });
+    expect(
+      sessions.joinRoom("guest", "Guest", room.roomCode, ` ${"x".repeat(80)} `)
+        .room,
+    ).toBeDefined();
+  });
+
+  it("refuses quick match while already in a room", () => {
+    const sessions = new SessionManager();
+    sessions.attachSink({
+      send() {},
+      broadcastRoom() {},
+    });
+    sessions.createRoom("a", "A", "PRIVATE", { playerCount: 2 });
+    sessions.joinQuickMatch("a", "A");
+    sessions.joinQuickMatch("b", "B");
+    expect(sessions.getRoomForPlayer("a")!.mode).toBe("PRIVATE");
+    expect(sessions.getRoomForPlayer("b")).toBeUndefined();
+  });
+
+  it("uses a new game id for a rematch", () => {
+    const { sessions, roomId } = setupGame();
+    const room = sessions.getRoom(roomId)!;
+    const firstGameId = room.game!.gameId;
+    room.status = "FINISHED";
+    const result = sessions.rematch(roomId, "alice");
+    expect(result.ok).toBe(true);
+    expect(room.game!.gameId).not.toBe(firstGameId);
+  });
+
+  it("preserves the turn deadline when the active player reconnects", () => {
+    vi.useFakeTimers();
+    const sessions = new SessionManager();
+    sessions.attachSink({
+      send() {},
+      broadcastRoom() {},
+    });
+    const room = sessions.createRoom("alice", "Alice", "PRIVATE", {
+      playerCount: 2,
+      turnDurationMs: 60_000,
+    });
+    sessions.joinRoom("bob", "Bob", room.roomCode);
+    sessions.startGame(room.roomId, "alice");
+
+    const state = sessions.getGameState(room.roomId)!;
+    const active = currentPlayerId(state)!;
+    const liveRoom = sessions.getRoom(room.roomId)!;
+    const deadline = liveRoom.turnDeadlineAt;
+    expect(deadline).not.toBeNull();
+
+    sessions.setConnection(active, false);
+    vi.advanceTimersByTime(10_000);
+    sessions.setConnection(active, true);
+
+    // The remaining clock resumes; it is not extended back to 60 seconds.
+    expect(liveRoom.turnDeadlineAt).toBe(deadline);
+    expect(liveRoom.turnTimer).not.toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("does not restart the turn clock when a bystander disconnects", () => {
+    vi.useFakeTimers();
+    const sessions = new SessionManager();
+    sessions.attachSink({
+      send() {},
+      broadcastRoom() {},
+    });
+    const room = sessions.createRoom("alice", "Alice", "PRIVATE", {
+      playerCount: 2,
+      turnDurationMs: 60_000,
+    });
+    sessions.joinRoom("bob", "Bob", room.roomCode);
+    sessions.startGame(room.roomId, "alice");
+
+    const state = sessions.getGameState(room.roomId)!;
+    const active = currentPlayerId(state)!;
+    const bystander = active === "alice" ? "bob" : "alice";
+    const liveRoom = sessions.getRoom(room.roomId)!;
+    const turnTimer = liveRoom.turnTimer;
+    expect(turnTimer).not.toBeNull();
+
+    sessions.setConnection(bystander, false);
+    vi.advanceTimersByTime(31_000);
+
+    // The disconnect timer expired, but it must not have re-armed the
+    // current player's 60-second clock.
+    expect(liveRoom.turnTimer).toBe(turnTimer);
+    vi.useRealTimers();
+  });
+
+  it("disposes an active room whose only human has gone away", () => {
+    vi.useFakeTimers();
+    const sessions = new SessionManager();
+    sessions.attachSink({
+      send() {},
+      broadcastRoom() {},
+    });
+    const room = sessions.createRoom("host", "Host", "SOLO", {
+      playerCount: 2,
+      aiSeats: 1,
+    });
+    sessions.startGame(room.roomId, "host");
+    sessions.setConnection("host", false);
+    vi.advanceTimersByTime(3 * 60 * 1000 + 20);
+    expect(sessions.getRoom(room.roomId)).toBeUndefined();
+    vi.useRealTimers();
+  });
+});
+
 describe("room secrets and hostile input (§74, §139)", () => {
   it("never exposes the room password, only hasPassword", () => {
     const sessions = new SessionManager();

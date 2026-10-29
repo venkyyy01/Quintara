@@ -156,6 +156,12 @@ export type ServerMessage =
   | {
       readonly type: "GAME_STATE";
       readonly state: ProjectedState;
+      /**
+       * Absolute epoch milliseconds for the current turn's server deadline.
+       * Clients render the countdown from this value so a reconnect or reload
+       * cannot restart the clock.
+       */
+      readonly turnDeadlineAt?: number | null;
     }
   | {
       readonly type: "GAME_EVENTS";
@@ -206,6 +212,8 @@ export interface GameSummary {
   readonly totalTurns: number;
   readonly winnerTeamId: string | null;
   readonly resultType: "WIN" | "STALEMATE";
+  /** Only public-room results appear in the public history feed. */
+  readonly isPublic: boolean;
   readonly players: readonly {
     readonly playerId: string;
     readonly displayName: string;

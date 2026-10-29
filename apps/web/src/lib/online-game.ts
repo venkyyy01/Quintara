@@ -35,6 +35,8 @@ export interface OnlineGameState {
   room: RoomState | null;
   projected: ProjectedState | null;
   version: number;
+  /** Server-authoritative current-turn deadline (epoch ms), if timed. */
+  turnDeadlineAt: number | null;
   selectedCardId: string | null;
   lastMoveSummary: string | null;
   /** Most recent marker placement (§45 drop animation), from projected events. */
@@ -88,6 +90,19 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
     }
   }
 
+  /**
+   * User intents must not disappear silently while the socket is down. The
+   * UI gates most controls, but keyboard/automation can still reach them.
+   */
+  function sendIntent(message: ClientMessage): boolean {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      set({ errorMessage: "Not connected yet — reconnecting…" });
+      return false;
+    }
+    socket.send(JSON.stringify(message));
+    return true;
+  }
+
   function handleMessage(message: ServerMessage): void {
     switch (message.type) {
       case "WELCOME":
@@ -98,6 +113,7 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
             token: message.identity.token,
           },
           connection: "connected",
+          errorMessage: null,
         });
         pendingToken = message.identity.token;
         try {
@@ -125,6 +141,7 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
         set({
           projected: message.state,
           version: message.state.version,
+          turnDeadlineAt: message.turnDeadlineAt ?? null,
           phase: "PLAYING",
           lastPlacedCellId: null,
           errorMessage: null,
@@ -194,7 +211,26 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
         break;
 
       case "ERROR":
-        set({ errorMessage: message.message });
+        if (message.code === "UNAUTHENTICATED") {
+          pendingToken = null;
+          try {
+            window.localStorage.removeItem("quintara-auth");
+          } catch {
+            // Storage unavailable — in-memory token is cleared above.
+          }
+          set({
+            identity: null,
+            room: null,
+            projected: null,
+            turnDeadlineAt: null,
+            phase: "HOME",
+            matchmaking: false,
+            errorMessage:
+              "Your session expired. Reconnecting as a new guest…",
+          });
+        } else {
+          set({ errorMessage: message.message });
+        }
         break;
 
       case "PONG":
@@ -236,7 +272,9 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
       socket = null;
       if (get().connection === "idle") return;
       // §30: "Connection lost / Reconnecting…" — never eject immediately.
-      set({ connection: "reconnecting" });
+      // The server removes disconnected players from matchmaking, so clear
+      // the local queue flag until the reconnect handshake completes.
+      set({ connection: "reconnecting", matchmaking: false });
       if (reconnectTimer) clearTimeout(reconnectTimer);
       const delay = Math.min(8000, 500 * 2 ** reconnectAttempts);
       reconnectAttempts += 1;
@@ -255,6 +293,7 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
     room: null,
     projected: null,
     version: 0,
+    turnDeadlineAt: null,
     selectedCardId: null,
     lastMoveSummary: null,
     lastPlacedCellId: null,
@@ -263,7 +302,15 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
 
     connect,
     disconnect: () => {
-      set({ connection: "idle", phase: "HOME", room: null, projected: null });
+      set({
+        connection: "idle",
+        phase: "HOME",
+        room: null,
+        projected: null,
+        turnDeadlineAt: null,
+        matchmaking: false,
+        selectedCardId: null,
+      });
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close();
       socket = null;
@@ -276,7 +323,7 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
       password,
       turnDurationMs,
     }) => {
-      send({
+      sendIntent({
         type: "CREATE_ROOM",
         requestId: request(),
         mode: aiSeats > 0 ? "SOLO" : "PRIVATE",
@@ -292,7 +339,7 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
     },
 
     joinRoom: (roomCode, password) => {
-      send({
+      sendIntent({
         type: "JOIN_ROOM",
         requestId: request(),
         roomCode,
@@ -301,29 +348,38 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
     },
 
     quickMatch: () => {
-      set({ matchmaking: true });
-      send({ type: "JOIN_QUICK_MATCH", requestId: request() });
+      if (sendIntent({ type: "JOIN_QUICK_MATCH", requestId: request() })) {
+        set({ matchmaking: true });
+      }
     },
 
     cancelQuickMatch: () => {
       // Only meaningful while actually queued; leaving an already-matched
       // room is leaveRoom's job, not a matchmaking cancellation.
       if (!get().matchmaking) return;
+      // Best-effort: the local queue is cleared even while offline.
       send({ type: "LEAVE_ROOM", requestId: request() });
       set({ matchmaking: false });
     },
 
     startGame: () => {
-      send({ type: "START_GAME", requestId: request() });
+      sendIntent({ type: "START_GAME", requestId: request() });
     },
 
     leaveRoom: () => {
       send({ type: "LEAVE_ROOM", requestId: request() });
-      set({ phase: "HOME", room: null, projected: null });
+      set({
+        phase: "HOME",
+        room: null,
+        projected: null,
+        turnDeadlineAt: null,
+        matchmaking: false,
+        selectedCardId: null,
+      });
     },
 
     rematch: () => {
-      send({ type: "REMATCH", requestId: request() });
+      sendIntent({ type: "REMATCH", requestId: request() });
     },
 
     selectCard: (cardId) => {
@@ -331,13 +387,16 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
     },
 
     sendCommand: (command) => {
-      send({
-        type: "GAME_COMMAND",
-        requestId: request(),
-        roomActionId: command.actionId,
-        command,
-      });
-      set({ selectedCardId: null });
+      if (
+        sendIntent({
+          type: "GAME_COMMAND",
+          requestId: request(),
+          roomActionId: command.actionId,
+          command,
+        })
+      ) {
+        set({ selectedCardId: null });
+      }
     },
 
     selectSequences: (sequences) => {

@@ -74,7 +74,24 @@ export function sanitiseSettings(value: unknown): UserSettings {
 
 interface SettingsStore extends UserSettings {
   update: (patch: Partial<UserSettings>) => void;
+  reset: () => void;
   hydrate: () => void;
+}
+
+/** Remove every Quintara key from this device (save, stats, settings, auth). */
+export function clearLocalData(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const keys: string[] = [];
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (key?.startsWith("quintara-")) keys.push(key);
+    }
+    for (const key of keys) window.localStorage.removeItem(key);
+    window.sessionStorage.clear();
+  } catch {
+    // Storage unavailable — nothing to clear.
+  }
 }
 
 function persist(state: UserSettings): void {
@@ -102,6 +119,10 @@ export const useSettings = create<SettingsStore>((set, get) => ({
     const merged = sanitiseSettings({ ...get(), ...patch });
     set(merged);
     persist(merged);
+  },
+  reset: () => {
+    set(DEFAULTS);
+    persist(DEFAULTS);
   },
   hydrate: () => {
     try {

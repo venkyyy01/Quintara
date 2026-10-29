@@ -11,7 +11,7 @@ import type {
   ProjectedState,
   SequenceSelectionOption,
 } from "@quintara/game-engine";
-import { useSettings } from "@/lib/settings";
+import { clearLocalData, useSettings } from "@/lib/settings";
 import { TeamBadge } from "./TeamMarker";
 
 /**
@@ -253,9 +253,13 @@ export function PassDeviceScreen({
 export function SequenceSelectionPanel({
   options,
   onSelect,
+  onUseDefault,
+  disabled = false,
 }: {
   options: readonly SequenceSelectionOption[];
   onSelect: (option: SequenceSelectionOption) => void;
+  onUseDefault?: () => void;
+  disabled?: boolean;
 }) {
   const titleId = useId();
   return (
@@ -279,6 +283,7 @@ export function SequenceSelectionPanel({
             key={option.optionId}
             type="button"
             autoFocus={index === 0}
+            disabled={disabled}
             className="btn btn-secondary justify-start text-left"
             onClick={() => onSelect(option)}
           >
@@ -295,6 +300,16 @@ export function SequenceSelectionPanel({
           </button>
         ))}
       </div>
+      {onUseDefault && (
+        <button
+          type="button"
+          disabled={disabled}
+          className="btn btn-ghost mt-2 w-full text-xs"
+          onClick={onUseDefault}
+        >
+          Use the automatic tie-break
+        </button>
+      )}
     </div>
   );
 }
@@ -448,6 +463,32 @@ export function SettingsPanel({
             Reduced disables marker drops, card lifts and animated line traces.
           </p>
         </fieldset>
+
+        <div className="mt-5 border-t border-white/8 pt-4">
+          <button
+            type="button"
+            className="btn btn-ghost w-full text-xs"
+            onClick={() => settings.reset()}
+          >
+            Reset settings to defaults
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost mt-1 w-full text-xs text-[var(--color-danger)]"
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Delete this device’s saved games, stats, settings and guest session? This cannot be undone.",
+                )
+              ) {
+                clearLocalData();
+                window.location.reload();
+              }
+            }}
+          >
+            Clear local data…
+          </button>
+        </div>
 
         {!inline && (
           <button

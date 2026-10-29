@@ -8,7 +8,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { CellId, SequenceSelectionOption } from "@quintara/game-engine";
+import {
+  defaultSequenceOption,
+  type CellId,
+  type SequenceSelectionOption,
+} from "@quintara/game-engine";
 import { GameScreen } from "@/components/GameScreen";
 import { ReconnectOverlay } from "@/components/Modals";
 import {
@@ -32,24 +36,25 @@ export default function OnlinePage() {
     remainingMs: number;
     totalMs: number;
   } | null>(null);
+  const pendingInvite = useRef<string | null>(null);
 
   useEffect(() => {
     online.connect();
     // Invite deep links (§30): /play/online?room=CODE joins automatically
-    // once the socket is authenticated.
+    // once the socket is authenticated. Keep the code in the join field so a
+    // password-protected room can still be entered if auto-join is refused.
     const invitedCode = new URLSearchParams(window.location.search)
       .get("room")
       ?.trim()
       .toUpperCase();
     if (invitedCode) {
       pendingInvite.current = invitedCode;
+      setJoinCode(invitedCode);
       // Clean the URL so a refresh doesn't try to join twice.
       window.history.replaceState(null, "", window.location.pathname);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const pendingInvite = useRef<string | null>(null);
 
   // Hooks must run on every render — computed before the phase-based returns.
   const projected = online.projected;
@@ -73,13 +78,11 @@ export default function OnlinePage() {
   }, [connection, phase, room, joinRoom]);
   const legalTargets = useMemo(() => {
     const set = new Set<CellId>();
-    if (!projected) return set;
+    if (!projected || !online.selectedCardId) return set;
     for (const action of projected.legalActions?.mainActions ?? []) {
       if (
-        online.selectedCardId
-          ? action.cardId === online.selectedCardId &&
-            action.type !== "PLAY_REMOVE_JACK"
-          : action.type !== "PLAY_REMOVE_JACK"
+        action.cardId === online.selectedCardId &&
+        action.type !== "PLAY_REMOVE_JACK"
       ) {
         set.add(action.targetCellId);
       }
@@ -103,29 +106,30 @@ export default function OnlinePage() {
     return set;
   }, [projected, online.selectedCardId]);
 
-  // Countdown for timed rooms. The server remains authoritative: it applies
-  // the timeout policy, while this display is refreshed on every new version.
+  // Countdown for timed rooms. Render from the server's absolute deadline so
+  // a reload/reconnect cannot visually restart the clock.
   const activeTurnDurationMs = online.room?.options.turnDurationMs ?? null;
+  const turnDeadlineAt = online.turnDeadlineAt;
   const projectedVersion = projected?.version;
   const currentTurnPlayerId = projected?.currentTurnPlayerId;
   useEffect(() => {
     if (
       online.phase !== "PLAYING" ||
       !activeTurnDurationMs ||
-      !projectedVersion
+      !projectedVersion ||
+      !turnDeadlineAt
     ) {
       setTurnTimer(null);
       return;
     }
-    const startedAt = Date.now();
-    const tick = () =>
+    const totalMs = activeTurnDurationMs;
+    const tick = () => {
+      const remainingMs = Math.max(0, turnDeadlineAt - Date.now());
       setTurnTimer({
-        remainingMs: Math.max(
-          0,
-          activeTurnDurationMs - (Date.now() - startedAt),
-        ),
-        totalMs: activeTurnDurationMs,
+        remainingMs: Math.min(remainingMs, totalMs),
+        totalMs,
       });
+    };
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
@@ -134,11 +138,13 @@ export default function OnlinePage() {
     activeTurnDurationMs,
     projectedVersion,
     currentTurnPlayerId,
+    turnDeadlineAt,
   ]);
 
   const isHost =
     online.identity !== null &&
     online.room?.hostPlayerId === online.identity.playerId;
+  const connected = online.connection === "connected";
 
   // Playing phase — server-driven game screen.
   if (online.phase === "PLAYING" && online.projected) {
@@ -166,8 +172,11 @@ export default function OnlinePage() {
                   onSelect: (option: SequenceSelectionOption) =>
                     online.selectSequences([...option.sequences]),
                   onUseDefault: () => {
-                    const first = state.pendingSequenceOptions?.[0];
-                    if (first) online.selectSequences([...first.sequences]);
+                    const options = state.pendingSequenceOptions ?? [];
+                    if (options.length === 0) return;
+                    // Match the server's deterministic timeout tie-break.
+                    const chosen = defaultSequenceOption(options);
+                    online.selectSequences([...chosen.sequences]);
                   },
                 }
               : null
@@ -190,18 +199,23 @@ export default function OnlinePage() {
           }
           onDismissNotice={online.clearError}
           turnTimer={turnTimer}
-          onSelectCard={(cardId) => online.selectCard(cardId)}
+          interactionDisabled={!connected}
+          onSelectCard={(cardId) => {
+            if (connected) online.selectCard(cardId);
+          }}
           onCellClick={(cellId: CellId) => {
+            if (!connected || !online.selectedCardId) return;
             const legal = state.legalActions;
             if (!legal) return;
             const match = legal.mainActions.find(
               (a) =>
                 a.targetCellId === cellId &&
-                (online.selectedCardId
-                  ? a.cardId === online.selectedCardId
-                  : true),
+                a.cardId === online.selectedCardId,
             );
-            if (!match || (!legalTargets.has(cellId) && !removableTargets.has(cellId)))
+            if (
+              !match ||
+              (!legalTargets.has(cellId) && !removableTargets.has(cellId))
+            )
               return;
             online.sendCommand({
               type: match.type,
@@ -212,6 +226,7 @@ export default function OnlinePage() {
             });
           }}
           onExchange={(cardId) => {
+            if (!connected) return;
             online.sendCommand({
               type: "EXCHANGE_DEAD_CARD",
               actionId: `web-${Date.now()}`,
@@ -219,7 +234,9 @@ export default function OnlinePage() {
               cardId,
             });
           }}
-          onRematch={() => online.rematch()}
+          onRematch={() => {
+            if (connected) online.rematch();
+          }}
           hideRematch={!isHost}
           onQuit={() => {
             online.leaveRoom();
@@ -277,7 +294,7 @@ export default function OnlinePage() {
             <button
               type="button"
               className="btn btn-primary mt-4 w-full"
-              disabled={online.matchmaking}
+              disabled={!connected || online.matchmaking}
               onClick={online.quickMatch}
             >
               {online.matchmaking
@@ -306,7 +323,13 @@ export default function OnlinePage() {
                 <select
                   className="mt-1 w-full rounded-[10px] border border-white/10 bg-surface px-3 py-2.5 text-sm"
                   value={playerCount}
-                  onChange={(e) => setPlayerCount(Number(e.target.value))}
+                  onChange={(e) => {
+                    const count = Number(e.target.value);
+                    setPlayerCount(count);
+                    // The server clamps AI seats to playerCount - 1; keep the
+                    // form honest so the host sees what will actually start.
+                    setAiSeats((current) => Math.min(current, count - 1));
+                  }}
                 >
                   {[2, 3, 4, 6].map((count) => (
                     <option key={count} value={count}>
@@ -322,7 +345,10 @@ export default function OnlinePage() {
                   value={aiSeats}
                   onChange={(e) => setAiSeats(Number(e.target.value))}
                 >
-                  {[0, 1, 2, 3].map((count) => (
+                  {Array.from(
+                    { length: Math.min(3, playerCount - 1) + 1 },
+                    (_, count) => count,
+                  ).map((count) => (
                     <option key={count} value={count}>
                       {count} bots
                     </option>
@@ -330,6 +356,16 @@ export default function OnlinePage() {
                 </select>
               </label>
             </div>
+            {playerCount === 3 && (
+              <p
+                className="mt-2.5 rounded-[10px] border border-[rgba(215,173,98,0.35)] bg-accent-soft px-3 py-2 text-xs text-secondary"
+                role="note"
+              >
+                <strong className="text-text-primary">3-player note:</strong>{" "}
+                three teams share the board and games often end in a draw. 2, 4
+                or 6 players give the most decisive matches.
+              </p>
+            )}
             <label className="mt-2.5 block text-sm">
               Bot difficulty
               <select
@@ -375,6 +411,7 @@ export default function OnlinePage() {
             <button
               type="button"
               className="btn btn-primary mt-4 w-full"
+              disabled={!connected}
               onClick={() =>
                 online.createRoom({
                   playerCount,
@@ -414,7 +451,7 @@ export default function OnlinePage() {
                     joinPassword.trim() || undefined,
                   )
                 }
-                disabled={joinCode.trim().length === 0}
+                disabled={!connected || joinCode.trim().length === 0}
               >
                 Join
               </button>
@@ -519,7 +556,7 @@ export default function OnlinePage() {
             ))}
           </ul>
 
-          <StartGameControl online={online} />
+          <StartGameControl online={online} connected={connected} />
           <p className="mt-2 text-center text-xs text-secondary">
             {online.room.players.length} of {online.room.options.playerCount}{" "}
             players ready
@@ -530,7 +567,13 @@ export default function OnlinePage() {
   );
 }
 
-function StartGameControl({ online }: { online: OnlineGameState }) {
+function StartGameControl({
+  online,
+  connected,
+}: {
+  online: OnlineGameState;
+  connected: boolean;
+}) {
   const isHost =
     online.identity !== null &&
     online.room?.players.some(
@@ -555,10 +598,14 @@ function StartGameControl({ online }: { online: OnlineGameState }) {
       <button
         type="button"
         className="btn btn-primary mt-6 w-full py-3.5"
-        disabled={!full}
+        disabled={!connected || !full}
         onClick={online.startGame}
       >
-        {full ? "Start Game" : "Waiting for players…"}
+        {!connected
+          ? "Reconnecting…"
+          : full
+            ? "Start Game"
+            : "Waiting for players…"}
       </button>
       {!full && (
         <p className="mt-1.5 text-center text-xs text-secondary">

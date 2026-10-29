@@ -2,8 +2,9 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Terms — QUINTARA",
+  title: "Terms",
   description: "Terms of service for playing Quintara.",
+  alternates: { canonical: "/terms" },
 };
 
 export default function TermsPage() {

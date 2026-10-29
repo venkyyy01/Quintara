@@ -36,9 +36,13 @@ export interface GameStore {
   getGame(gameId: string): Promise<StoredGame | null>;
   deleteGame(gameId: string): Promise<void>;
   saveSummary(summary: GameSummary): Promise<void>;
-  listSummaries(limit: number): Promise<GameSummary[]>;
+  listSummaries(
+    limit: number,
+    options?: { publicOnly?: boolean },
+  ): Promise<GameSummary[]>;
   getProcessedAction(
     gameId: string,
+    playerId: string,
     actionId: string,
   ): Promise<StoredAction | null>;
 }
@@ -78,17 +82,28 @@ export class InMemoryGameStore implements GameStore {
     }
   }
 
-  async listSummaries(limit: number): Promise<GameSummary[]> {
+  async listSummaries(
+    limit: number,
+    options?: { publicOnly?: boolean },
+  ): Promise<GameSummary[]> {
     const safeLimit = Number.isInteger(limit)
       ? Math.min(IN_MEMORY_SUMMARY_LIMIT, Math.max(0, limit))
       : 20;
-    return this.summaries.slice(0, safeLimit);
+    const source = options?.publicOnly
+      ? this.summaries.filter((summary) => summary.isPublic)
+      : this.summaries;
+    return source.slice(0, safeLimit);
   }
 
   async getProcessedAction(
     gameId: string,
+    playerId: string,
     actionId: string,
   ): Promise<StoredAction | null> {
-    return this.games.get(gameId)?.processedActions.get(actionId) ?? null;
+    return (
+      this.games
+        .get(gameId)
+        ?.processedActions.get(`${playerId}:${actionId}`) ?? null
+    );
   }
 }

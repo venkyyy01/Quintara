@@ -127,4 +127,18 @@ describe("standard board definition", () => {
     const issues = boardDefinitionIssues(withJack);
     expect(issues.some((i) => i.includes("Jack"))).toBe(true);
   });
+
+  it("rejects non-canonical cell id aliases", () => {
+    const aliased = {
+      ...board,
+      cells: board.cells.map((cell) =>
+        cell.id === "r1c1" ? { ...cell, id: "r01c1" } : cell,
+      ),
+    };
+    const issues = boardDefinitionIssues(aliased);
+    expect(issues.some((issue) => issue.includes("not canonical"))).toBe(true);
+    expect(() =>
+      createGame({ players: [{ name: "A" }, { name: "B" }], board: aliased }),
+    ).toThrow(/not canonical/);
+  });
 });

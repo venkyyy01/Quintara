@@ -2,8 +2,9 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Privacy — QUINTARA",
+  title: "Privacy",
   description: "How Quintara handles game data, local storage and online rooms.",
+  alternates: { canonical: "/privacy" },
 };
 
 export default function PrivacyPage() {

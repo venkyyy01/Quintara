@@ -4,7 +4,15 @@
  */
 
 import Link from "next/link";
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
+
+export const metadata: Metadata = {
+  title: "How to Play",
+  description:
+    "Learn Quintara: cards, wild corners, one-eyed and two-eyed jacks, dead cards, protected lines and team play.",
+  alternates: { canonical: "/rules" },
+};
 
 const SECTIONS: { title: string; body: ReactNode }[] = [
   {

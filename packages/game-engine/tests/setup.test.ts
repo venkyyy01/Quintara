@@ -286,6 +286,34 @@ describe("configuration validation (§4–§8, §106)", () => {
       }),
     ).toThrow(/boolean/);
   });
+
+  it("labels dead-card and timer overrides as custom rules", () => {
+    const noExchange = startGame(
+      createGame({
+        players: players(2),
+        allowDeadCardExchange: false,
+      }),
+    ).state;
+    expect(noExchange.rulesVersion).toBe(CUSTOM_RULES_VERSION);
+    expect(noExchange.rulesConfig.allowDeadCardExchange).toBe(false);
+    expect(validateGameState(noExchange)).toEqual([]);
+
+    const timed = startGame(
+      createGame({ players: players(2), turnDurationMs: 60_000 }),
+    ).state;
+    expect(timed.rulesVersion).toBe(CUSTOM_RULES_VERSION);
+    expect(validateGameState(timed)).toEqual([]);
+
+    // Explicitly requesting the Standard preset while overriding a custom
+    // rule must be rejected, not silently mislabeled.
+    expect(() =>
+      createGame({
+        players: players(2),
+        allowDeadCardExchange: false,
+        rulesVersion: RULES_VERSION,
+      }),
+    ).toThrow(/non-Standard rulesVersion/);
+  });
 });
 
 describe("dealing and game start (§21–§22)", () => {

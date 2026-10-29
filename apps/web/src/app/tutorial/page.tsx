@@ -155,7 +155,7 @@ const LESSONS: Lesson[] = [
   {
     title: "Two-Eyed Jack",
     instruction:
-      "J♣ and J♦ are wild: place a marker on ANY open space. Try it — pick the highlighted centre space.",
+      "J♣ and J♦ are wild: place a marker on ANY open space. Pick any highlighted space — the centre is a strong choice.",
     build: () =>
       scenario()
         .withCurrentPlayer("A")
@@ -167,7 +167,7 @@ const LESSONS: Lesson[] = [
   {
     title: "One-Eyed Jack",
     instruction:
-      "J♥ removes an opponent marker. Tap the red marker to remove it — you will not place your own this turn.",
+      "J♥ removes an opponent marker. Tap the gold marker to remove it — you will not place your own this turn.",
     build: () =>
       scenario()
         .withCurrentPlayer("A")
@@ -180,7 +180,7 @@ const LESSONS: Lesson[] = [
   {
     title: "Protected lines",
     instruction:
-      "The opponent completed a line — its markers are protected. Try tapping a protected marker: the game will refuse. Then remove the free red marker instead.",
+      "The opponent completed a line — its markers are protected. Try tapping a protected marker: the game will refuse. Then remove the free gold marker instead.",
     build: () => buildProtectedLineState(),
     isComplete: (_b, command) =>
       command.type === "PLAY_REMOVE_JACK" && command.targetCellId === "r7c7",
@@ -268,11 +268,11 @@ export default function TutorialPage() {
 
   const legalTargets = useMemo(() => {
     const set = new Set<string>();
+    if (!selectedCardId) return set;
     for (const action of projected.legalActions?.mainActions ?? []) {
       if (
-        !selectedCardId ||
-        (action.cardId === selectedCardId &&
-          action.type !== "PLAY_REMOVE_JACK")
+        action.cardId === selectedCardId &&
+        action.type !== "PLAY_REMOVE_JACK"
       ) {
         set.add(action.targetCellId);
       }
@@ -294,14 +294,16 @@ export default function TutorialPage() {
     const before = state;
     try {
       const result = applyCommand(before, command);
-      setState(result.state);
       if (lesson.isComplete(before, command, result.state)) {
+        setState(result.state);
         setDone(true);
         setFeedback("✓ Lesson complete!");
-      } else if (command.type === "EXCHANGE_DEAD_CARD") {
-        setFeedback("Card exchanged — now play your main action.");
       } else {
-        setFeedback("Move made. Keep going.");
+        // Tutorial turns are scripted. Discard an off-script move instead of
+        // handing the turn to the other seat and leaving the lesson stuck.
+        setFeedback(
+          "That move does not complete this lesson. Try the highlighted action again.",
+        );
       }
     } catch (error) {
       if (error instanceof EngineError) {
@@ -312,8 +314,12 @@ export default function TutorialPage() {
   }
 
   function onCellClick(cellId: string) {
+    if (!selectedCardId) {
+      setFeedback("Select a card first, then tap a highlighted space.");
+      return;
+    }
     const action = (projected.legalActions?.mainActions ?? []).find(
-      (a) => a.targetCellId === cellId && (!selectedCardId || a.cardId === selectedCardId),
+      (a) => a.targetCellId === cellId && a.cardId === selectedCardId,
     );
     if (!action) {
       if ((projected.sequenceMembership[cellId]?.length ?? 0) > 0) {
@@ -322,7 +328,7 @@ export default function TutorialPage() {
         );
       } else if (projected.boardCells[cellId]?.occupantTeamId) {
         setFeedback("That space is occupied. Pick a highlighted space.");
-      } else if (selectedCardId) {
+      } else {
         setFeedback("That card cannot be played on this space.");
       }
       return;
@@ -406,10 +412,12 @@ export default function TutorialPage() {
             key={card.id}
             code={card.code}
             selected={selectedCardId === card.id}
-            playable
+            playable={!card.dead}
+            dead={card.dead}
             onClick={() =>
               setSelectedCardId(selectedCardId === card.id ? null : card.id)
             }
+            ariaHint={card.dead ? "Dead card" : "Playable"}
           />
         ))}
         {(projected.legalActions?.deadExchanges ?? []).map((exchange) => (

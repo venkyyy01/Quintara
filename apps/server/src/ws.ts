@@ -193,6 +193,10 @@ export async function registerWebSocket(
                   message:
                     "Your session has expired. Reconnect to continue as a guest.",
                 });
+                // Close with an application code so the client can clear the
+                // stale token and reconnect as a fresh guest instead of
+                // looping forever with the same rejected credential.
+                socket.close(4401, "Unauthenticated");
                 break;
               }
               connection = { socket, identity };
