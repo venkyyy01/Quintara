@@ -12,8 +12,8 @@
     "node": ">=20.11"
   },
   "scripts": {
-    "build": "npm run build -w @quintara/shared-types -w @quintara/game-engine -w @quintara/config -w @quintara/game-ai && npm run build -w @quintara/server -w @quintara/web",
-    "build:packages": "npm run build -w @quintara/shared-types -w @quintara/game-engine -w @quintara/config -w @quintara/game-ai",
+    "build": "npm run build:packages && npm run build -w @quintara/server -w @quintara/web",
+    "build:packages": "npm run build -w @quintara/game-engine -w @quintara/shared-types -w @quintara/config -w @quintara/game-ai",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "lint": "eslint .",
