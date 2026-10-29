@@ -10,6 +10,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import type {
   CellId,
   ProjectedState,
@@ -138,12 +139,14 @@ export function GameScreen(props: GameScreenProps) {
     : null;
   const suitSymbol =
     selectedCard &&
-    ({
-      HEARTS: "♥",
-      DIAMONDS: "♦",
-      CLUBS: "♣",
-      SPADES: "♠",
-    } as Record<string, string>)[selectedCard.suit];
+    (
+      {
+        HEARTS: "♥",
+        DIAMONDS: "♦",
+        CLUBS: "♣",
+        SPADES: "♠",
+      } as Record<string, string>
+    )[selectedCard.suit];
   const legalTargetCount = legalTargets.size + removableTargets.size;
   const selectionAnnouncement = selectedCard
     ? `${selectedCard.rank}${suitSymbol ?? ` of ${selectedCard.suit.toLowerCase()}`} selected. ${legalTargetCount} legal ${legalTargetCount === 1 ? "space" : "spaces"}.`
@@ -181,132 +184,155 @@ export function GameScreen(props: GameScreenProps) {
     >
       <div
         className="flex flex-1 flex-col"
-        inert={handoff.pending || settingsOpen || projected.status === "FINISHED"}
+        inert={
+          handoff.pending || settingsOpen || projected.status === "FINISHED"
+        }
         aria-hidden={
           handoff.pending || settingsOpen || projected.status === "FINISHED"
             ? true
             : undefined
         }
       >
-      {/* Top status bar (§35) */}
-      <header className="flex flex-wrap items-center gap-2 py-2 sm:gap-3">
-        <span
-          className="shrink-0 text-base font-bold tracking-[0.16em] sm:text-lg sm:tracking-[0.22em]"
-          style={{
-            background: "linear-gradient(180deg, #f6d99a, var(--color-accent))",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-          }}
-        >
-          QUINTARA
-        </span>
-        <div className="hidden flex-1 sm:block" />
-        <div className="order-3 ml-auto min-w-0 sm:order-none">
-          <TurnBanner
-            projected={projected}
-            viewerId={viewerId}
-            botThinking={botThinking}
-            turnTimer={turnTimer}
-          />
-        </div>
-        <button
-          type="button"
-          className="btn btn-ghost shrink-0 px-2.5 py-2 text-sm sm:px-3"
-          onClick={() => setSettingsOpen(true)}
-          aria-label="Open settings"
-        >
-          <span aria-hidden>⚙</span>
-          <span className="hidden sm:inline">Settings</span>
-        </button>
-      </header>
-
-      {connectionLabel && (
-        <div className="mb-1 text-center text-xs text-secondary" role="status">
-          {connectionLabel}
-        </div>
-      )}
-
-      <p className="sr-only" role="status" aria-live="polite">
-        {selectionAnnouncement}
-      </p>
-
-      {/* Main area — responsive columns (§35–§38) */}
-      <main className="grid flex-1 items-start gap-4 pb-3 lg:grid-cols-[260px_minmax(0,1fr)_280px]">
-        {/* Players: side column on desktop, horizontal strip on mobile */}
-        <div className="order-2 lg:order-1">
-          <div className="lg:block">
-            <PlayersPanel projected={projected} viewerId={viewerId} />
+        {/* Top status bar (§35) */}
+        <header className="flex flex-wrap items-center gap-2 py-2 sm:gap-3">
+          <span
+            className="shrink-0 text-base font-bold tracking-[0.16em] sm:text-lg sm:tracking-[0.22em]"
+            style={{
+              background:
+                "linear-gradient(180deg, #f6d99a, var(--color-accent))",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+            }}
+          >
+            QUINTARA
+          </span>
+          <div className="hidden flex-1 sm:block" />
+          <div className="order-3 ml-auto min-w-0 sm:order-none">
+            <TurnBanner
+              projected={projected}
+              viewerId={viewerId}
+              botThinking={botThinking}
+              turnTimer={turnTimer}
+            />
           </div>
-        </div>
+          <button
+            type="button"
+            className="btn btn-ghost shrink-0 px-2.5 py-2 text-sm sm:px-3"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Open settings"
+          >
+            <span aria-hidden>⚙</span>
+            <span className="hidden sm:inline">Settings</span>
+          </button>
+        </header>
 
-        {/* Board — dominant */}
-        <div className="relative order-1 mx-auto w-full max-w-[min(100%,720px)] lg:order-2 lg:max-w-none">
-          {sequenceSelection && viewerIsActing && (
-            <div className="mb-3">
-              <SequenceSelectionPanel
-                options={sequenceSelection.options}
-                onSelect={sequenceSelection.onSelect}
-                onUseDefault={sequenceSelection.onUseDefault}
-                disabled={interactionDisabled}
-              />
+        {connectionLabel && (
+          <div
+            className="mb-1 text-center text-xs text-secondary"
+            role="status"
+          >
+            {connectionLabel}
+          </div>
+        )}
+
+        <p className="sr-only" role="status" aria-live="polite">
+          {selectionAnnouncement}
+        </p>
+
+        {/* Main area — responsive columns (§35–§38) */}
+        <main className="grid flex-1 items-start gap-4 pb-3 lg:grid-cols-[260px_minmax(0,1fr)_280px]">
+          {/* Players: side column on desktop, horizontal strip on mobile */}
+          <div className="order-2 lg:order-1">
+            <div className="lg:block">
+              <PlayersPanel projected={projected} viewerId={viewerId} />
             </div>
-          )}
-          <GameBoard
-            projected={projected}
-            selectedCardId={selectedCardId}
-            legalTargets={legalTargets}
-            removableTargets={removableTargets}
-            showLegalMoves={showLegalMoves}
-            animationSpeed={animationSpeed}
-            lastPlacedCellId={lastPlacedCellId}
-            disabled={interactionDisabled}
-            onCellClick={props.onCellClick}
-          />
-          <SequenceTraceOverlay projected={projected} speed={animationSpeed} />
-        </div>
-
-        {/* Match info */}
-        <div className="order-3">
-          <MatchInfo
-            projected={projected}
-            turnLabel={currentName}
-            lastMoveSummary={lastMoveSummary}
-            round={Math.ceil(projected.turnNumber / Math.max(1, projected.players.length))}
-          />
-        </div>
-      </main>
-
-      {/* Hand dock (§52) */}
-      <footer className="sticky bottom-0 z-10">
-        <div className="panel px-3 py-1.5">
-          <div className="mb-1 flex items-center justify-between px-1">
-            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-secondary">
-              Your hand
-            </span>
-            {viewerIsActing && (
-              <span className="text-xs text-accent">
-                Select a card, then a highlighted space
-              </span>
-            )}
           </div>
-          <PlayerHand
-            projected={projected}
-            authoritativeState={authoritativeState}
-            selectedCardId={selectedCardId}
-            canAct={
-              viewerIsActing &&
-              projected.status === "ACTIVE" &&
-              !interactionDisabled
-            }
-            deadExchangeAvailable={
-              (projected.legalActions?.deadExchanges.length ?? 0) > 0 &&
-              !projected.deadCardExchangeUsed
-            }
-            onSelectCard={handleSelectCard}
-            onExchange={props.onExchange}
-          />
-        </div>
-      </footer>
+
+          {/* Board — dominant */}
+          <div className="relative order-1 mx-auto w-full max-w-[min(100%,720px)] lg:order-2 lg:max-w-none">
+            {sequenceSelection && viewerIsActing && (
+              <div className="mb-3">
+                <SequenceSelectionPanel
+                  options={sequenceSelection.options}
+                  onSelect={sequenceSelection.onSelect}
+                  onUseDefault={sequenceSelection.onUseDefault}
+                  disabled={interactionDisabled}
+                />
+              </div>
+            )}
+            <GameBoard
+              projected={projected}
+              selectedCardId={selectedCardId}
+              legalTargets={legalTargets}
+              removableTargets={removableTargets}
+              showLegalMoves={showLegalMoves}
+              animationSpeed={animationSpeed}
+              lastPlacedCellId={lastPlacedCellId}
+              disabled={interactionDisabled}
+              onCellClick={props.onCellClick}
+            />
+            <SequenceTraceOverlay
+              projected={projected}
+              speed={animationSpeed}
+            />
+          </div>
+
+          {/* Match info */}
+          <div className="order-3">
+            <MatchInfo
+              projected={projected}
+              turnLabel={currentName}
+              lastMoveSummary={lastMoveSummary}
+              round={Math.ceil(
+                projected.turnNumber / Math.max(1, projected.players.length),
+              )}
+            />
+          </div>
+        </main>
+
+        {/* Hand dock (§52) */}
+        <footer className="sticky bottom-0 z-10">
+          <div className="panel px-3 py-1.5">
+            <div className="mb-1 flex items-center justify-between px-1">
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-secondary">
+                Your hand
+              </span>
+              {viewerIsActing && (
+                <span className="text-xs text-accent">
+                  Select a card, then a highlighted space
+                </span>
+              )}
+            </div>
+            <PlayerHand
+              projected={projected}
+              authoritativeState={authoritativeState}
+              selectedCardId={selectedCardId}
+              canAct={
+                viewerIsActing &&
+                projected.status === "ACTIVE" &&
+                !interactionDisabled
+              }
+              deadExchangeAvailable={
+                (projected.legalActions?.deadExchanges.length ?? 0) > 0 &&
+                !projected.deadCardExchangeUsed
+              }
+              onSelectCard={handleSelectCard}
+              onExchange={props.onExchange}
+            />
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 px-2 pt-1 text-center text-[10px] leading-tight text-secondary">
+            <span>
+              Independent project; not affiliated with the publishers of
+              Sequence.
+            </span>
+            <Link
+              href="/licenses"
+              className="underline-offset-2 hover:text-accent hover:underline"
+            >
+              Licenses
+            </Link>
+          </div>
+        </footer>
       </div>
 
       {notices.length > 0 && (

@@ -1,0 +1,120 @@
+# QUINTARA — PROPRIETARY SOFTWARE LICENSE
+
+Copyright (c) 2026 Venkata Sai Krishna Chirasani. All rights reserved, to the
+extent permitted by law and subject to Section 0.
+
+To the extent copyright and other rights subsist in the following material and
+are owned by the copyright holder, this repository, the Quintara game, and all
+associated source code, game engine, artificial-intelligence code, user
+interface, visual design, artwork, icons, screenshots, rules text,
+documentation, and other original material (collectively, the "Software") are
+proprietary. They are **not** open source.
+
+## 0. Scope; AI-assisted and third-party material
+
+The copyright holder claims rights only in material that is protected by
+applicable law and owned by the copyright holder. Some of the Software was
+produced with substantial AI assistance. The copyright holder does not claim
+exclusive copyright in purely AI-generated output that is not protected by
+copyright, and does not represent that every portion of the Software is
+exclusively human-authored. See `docs/ai-assistance-disclosure.md`.
+
+This License does not grant, limit, or replace any rights or obligations under
+third-party licenses. Third-party packages, fonts, binaries, and other
+components remain governed by their own terms. See `THIRD_PARTY_NOTICES.md` and
+`docs/third-party-licenses.md`.
+
+## 1. Limited permission to view
+
+You may view the public repository on GitHub, make a fork within GitHub, and
+clone or download the repository solely to view it locally or to prepare a
+proposed contribution under the terms in `CONTRIBUTING.md`, including modifying
+your fork or local copy solely to prepare that contribution. Any such fork or
+local copy remains subject to this License. This limited permission does not
+grant any right to use the Software for any other purpose. GitHub's Terms of
+Service continue to govern viewing and forking on GitHub; nothing in this
+License purports to override them.
+
+## 2. No other license
+
+Except for the limited permission in Section 1 and any rights you have under
+applicable law that cannot be excluded, no license or permission is granted,
+expressly or by implication, estoppel, or otherwise, to:
+
+- copy, reproduce, or download the Software;
+- modify, adapt, translate, or create derivative works;
+- distribute, publish, sublicense, sell, rent, lease, lend, or host the
+  Software for others;
+- use the Software in a product, service, commercial offering, or competing
+  game;
+- reverse engineer, decompile, or disassemble the Software, except to the
+  extent that applicable law expressly permits it; or
+- use the Software or its assets for text-and-data mining, machine-learning
+  training, or the development of generative artificial-intelligence models,
+  to the extent permitted by applicable law.
+
+## 3. Contributions
+
+Any contribution you submit is governed by `CONTRIBUTING.md`. Submitting a
+contribution does not give you any ownership interest in the Software and does
+not grant you any license beyond the limited permission in Section 1.
+
+## 4. Trademarks and branding
+
+This License does not grant any right to use the QUINTARA name, logo, or other
+brand elements. See `TRADEMARK.md`. All third-party trademarks remain the
+property of their respective owners. Quintara is an independent project and is
+not affiliated with, endorsed by, or sponsored by Jax Ltd., Goliath Games,
+Goliath IP Stichting, or the publishers of the board game *Sequence*.
+
+## 5. Third-party components
+
+The Software depends on third-party packages, fonts, and other components that
+are licensed under their own terms. Those terms continue to apply. This
+includes copyleft and notice licenses such as LGPL-3.0-or-later (libvips, used
+by sharp), MPL-2.0 (lightningcss), CC-BY-4.0 (caniuse-lite), and the SIL Open
+Font License 1.1 (Sora and Inter). Nothing in this License limits any rights you may have
+under a third-party license, including any right to modify, replace, or relink
+an LGPL-covered component. If you distribute a built artifact containing those
+components, comply with the applicable license. See `THIRD_PARTY_NOTICES.md` and
+`docs/third-party-licenses.md`.
+
+## 6. No warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION ANY WARRANTY OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, OR
+NON-INFRINGEMENT. THE COPYRIGHT HOLDER DOES NOT WARRANT THAT THE SOFTWARE IS
+ERROR-FREE, SECURE, OR FREE OF THIRD-PARTY RIGHTS.
+
+## 7. Limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COPYRIGHT HOLDER SHALL
+NOT BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR ANY LOSS OF PROFITS, DATA,
+GOODWILL, OR BUSINESS OPPORTUNITY, ARISING OUT OF OR RELATING TO THE SOFTWARE
+OR THIS LICENSE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES. NOTHING
+IN THIS LICENSE LIMITS ANY LIABILITY THAT CANNOT BE LIMITED BY LAW.
+
+## 8. Termination
+
+This License terminates automatically if you breach any of its terms. On
+termination, you must stop using the Software and destroy any copies you made,
+except for a fork within GitHub that you are required to retain by GitHub's
+terms or a local copy that you maintain solely to prepare a contribution under
+`CONTRIBUTING.md`. Sections 2 through 9 survive termination.
+
+## 9. General
+
+This License is governed by the laws of Canada and the applicable province or
+territory in which the copyright holder resides, without regard to
+conflict-of-laws rules. If any provision is held unenforceable, it will be
+limited to the minimum extent necessary and the remaining provisions will
+remain in effect. This License is the entire agreement regarding use of the
+Software and may only be amended in a writing signed by the copyright holder.
+
+---
+
+This is a proprietary, source-available license. It is not legal advice. If you
+need permission beyond the limited permission above, contact the copyright
+holder through the project repository.

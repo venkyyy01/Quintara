@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Quintara AI players — Easy/Medium/Hard/Expert. Never inspects hidden human cards (§91).",
   "license": "UNLICENSED",
+  "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

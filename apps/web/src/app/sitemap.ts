@@ -1,8 +1,8 @@
 import type { MetadataRoute } from "next";
-
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://quintara.game";
+import { getSiteUrl } from "@/lib/site";
 
 export default function sitemap(): MetadataRoute.Sitemap {
+  const baseUrl = getSiteUrl();
   const now = new Date();
   const routes = [
     "",
@@ -14,9 +14,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/settings",
     "/privacy",
     "/terms",
+    "/licenses",
   ];
   return routes.map((route) => ({
-    url: `${BASE_URL}${route}`,
+    url: `${baseUrl}${route}`,
     lastModified: now,
     changeFrequency: route === "" ? "weekly" : "monthly",
     priority: route === "" ? 1 : route.startsWith("/play") ? 0.8 : 0.5,

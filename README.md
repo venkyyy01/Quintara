@@ -12,18 +12,22 @@ Quintara is a browser-based strategy board game where cards meet position on a
 rival Jacks. Play solo against AI, pass-and-play on one device, or compete online
 in private rooms and quick matches.
 
+Quintara is an independent project. It is not affiliated with, endorsed by, or
+sponsored by Jax Ltd., Goliath Games, Goliath IP Stichting, or the publishers of
+the board game _Sequence_. See [Legal](#legal).
+
 ![Quintara home screen](docs/screenshots/home.png)
 
 ## At a glance
 
-| Property | Details |
-| --- | --- |
-| **Modes** | Solo vs AI · local pass-and-play · online private rooms and quick match |
-| **Players** | 2, 3, 4, 6, 8, 9, 10, or 12 (mode-dependent) |
-| **AI** | Easy · Medium · Hard · Expert |
-| **Stack** | TypeScript · Next.js 15 · Fastify · WebSocket · Vitest |
-| **Platform** | Installable PWA for desktop and mobile browsers |
-| **License** | Publicly viewable; not open source |
+| Property     | Details                                                                 |
+| ------------ | ----------------------------------------------------------------------- |
+| **Modes**    | Solo vs AI · local pass-and-play · online private rooms and quick match |
+| **Players**  | 2, 3, 4, 6, 8, 9, 10, or 12 (mode-dependent)                            |
+| **AI**       | Easy · Medium · Hard · Expert                                           |
+| **Stack**    | TypeScript · Next.js 15 · Fastify · WebSocket · Vitest                  |
+| **Platform** | Installable PWA for desktop and mobile browsers                         |
+| **License**  | Proprietary — all rights reserved ([LICENSE](LICENSE))                  |
 
 ## Contents
 
@@ -38,6 +42,7 @@ in private rooms and quick matches.
 - [Environment variables](#environment-variables)
 - [Deployment](#deployment)
 - [Security and privacy](#security-and-privacy)
+- [Legal](#legal)
 - [Project status](#project-status)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
@@ -178,23 +183,35 @@ replay verification share the exact same rules.
   contract (v1.0)
 - [`adr/Game_design_plan.md`](adr/Game_design_plan.md) — product and design
   specification
+- [`docs/legal-risk-review.md`](docs/legal-risk-review.md) — IP, trademark,
+  copyright, patent, and privacy risk review
+- [`docs/ai-assistance-disclosure.md`](docs/ai-assistance-disclosure.md) —
+  AI-assistance and human-authorship record
+- [`docs/defense-playbook.md`](docs/defense-playbook.md) — lawyer-ready
+  litigation and demand-letter response checklist
+- [`docs/ip-asset-register.md`](docs/ip-asset-register.md) — asset provenance
+  and ownership register
+- [`docs/third-party-licenses.md`](docs/third-party-licenses.md) — dependency
+  license inventory (local platform snapshot)
+- [`/licenses`](apps/web/src/app/licenses/page.tsx) — in-app third-party
+  notices and license texts
 - [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — CI pipeline
 - [`docs/screenshots`](docs/screenshots) — screenshots used in this README
 
 ## npm scripts
 
-| Command | What it does |
-| --- | --- |
-| `npm run dev` | Start the server and web client together |
-| `npm run dev:web` | Start only the Next.js client |
-| `npm run dev:server` | Start only the game server |
-| `npm run build:packages` | Build engine, AI, shared types, and config |
-| `npm run build` | Production build for packages, server, and web |
-| `npm test` | Run all workspace test suites |
-| `npm run typecheck` | Strict TypeScript checks across the monorepo |
-| `npm run lint` | ESLint |
-| `npm run start:server` | Run the built server (`dist/index.js`) |
-| `npm run format` | Format with Prettier |
+| Command                  | What it does                                   |
+| ------------------------ | ---------------------------------------------- |
+| `npm run dev`            | Start the server and web client together       |
+| `npm run dev:web`        | Start only the Next.js client                  |
+| `npm run dev:server`     | Start only the game server                     |
+| `npm run build:packages` | Build engine, AI, shared types, and config     |
+| `npm run build`          | Production build for packages, server, and web |
+| `npm test`               | Run all workspace test suites                  |
+| `npm run typecheck`      | Strict TypeScript checks across the monorepo   |
+| `npm run lint`           | ESLint                                         |
+| `npm run start:server`   | Run the built server (`dist/index.js`)         |
+| `npm run format`         | Format with Prettier                           |
 
 ## Testing and quality
 
@@ -255,13 +272,13 @@ Product and design specifications live in `adr/Game_design_plan.md`.
 
 ### Server
 
-| Variable | Purpose | Default |
-| --- | --- | --- |
-| `PORT` | HTTP/WebSocket port | `4000` |
-| `HOST` | Bind address | `0.0.0.0` |
-| `CORS_ORIGIN` | Comma-separated allowed origins, or `true` in dev | `http://localhost:3000` |
-| `QUINTARA_AUTH_SECRET` | HMAC secret for player tokens (≥32 chars in production) | ephemeral in dev |
-| `TRUST_PROXY` | Trusted proxy hops or proxy IPs for client-IP limits | unset (direct) |
+| Variable               | Purpose                                                 | Default                 |
+| ---------------------- | ------------------------------------------------------- | ----------------------- |
+| `PORT`                 | HTTP/WebSocket port                                     | `4000`                  |
+| `HOST`                 | Bind address                                            | `0.0.0.0`               |
+| `CORS_ORIGIN`          | Comma-separated allowed origins, or `true` in dev       | `http://localhost:3000` |
+| `QUINTARA_AUTH_SECRET` | HMAC secret for player tokens (≥32 chars in production) | ephemeral in dev        |
+| `TRUST_PROXY`          | Trusted proxy hops or proxy IPs for client-IP limits    | unset (direct)          |
 
 `QUINTARA_AUTH_SECRET` is mandatory when `NODE_ENV=production`. The server
 refuses to boot without a real secret and rejects documented placeholder values.
@@ -273,10 +290,11 @@ is directly exposed.
 
 ### Web
 
-| Variable | Purpose |
-| --- | --- |
-| `NEXT_PUBLIC_WS_URL` | WebSocket endpoint, e.g. `wss://game.example.com/ws` |
-| `NEXT_PUBLIC_SITE_URL` | Canonical site URL used by metadata and the sitemap |
+| Variable                    | Purpose                                                                                                                                                                                                              |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_WS_URL`        | WebSocket endpoint, e.g. `wss://game.example.com/ws`                                                                                                                                                                 |
+| `NEXT_PUBLIC_SITE_URL`      | Canonical site URL used by metadata and the sitemap. Must be a domain you own in production.                                                                                                                         |
+| `NEXT_PUBLIC_CONTACT_EMAIL` | Public contact address on the privacy and terms pages. Required for production deployments. The build fails fast when a production deployment is detected (Vercel production or a non-local `NEXT_PUBLIC_SITE_URL`). |
 
 Copy `.env.example` to the relevant location as a starting point.
 
@@ -304,10 +322,17 @@ npm run start -w @quintara/web
 - **Secrets**: set a random `QUINTARA_AUTH_SECRET` of at least 32 characters.
   Generate one with `openssl rand -base64 48`.
 - **Configuration**: set `CORS_ORIGIN`, `NEXT_PUBLIC_WS_URL`,
-  `NEXT_PUBLIC_SITE_URL`, and `TRUST_PROXY` for the target environment.
+  `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_CONTACT_EMAIL`, and `TRUST_PROXY` for
+  the target environment. `NEXT_PUBLIC_SITE_URL` must be a domain you own;
+  the app resolves it as `NEXT_PUBLIC_SITE_URL` → Vercel production URL →
+  Vercel deployment URL → localhost, and never defaults to an unowned domain.
+  `NEXT_PUBLIC_CONTACT_EMAIL` is required in production; the app fails fast
+  rather than publishing a privacy policy without a monitored contact. Set both
+  variables together: an unset `NEXT_PUBLIC_SITE_URL` is treated as a local
+  build, so do not rely on the guard alone.
 - **Shutdown**: the server handles `SIGTERM`/`SIGINT` gracefully.
-- Before a paid launch, replace the placeholder contact addresses on the
-  privacy/terms pages and have them reviewed by counsel.
+- Before a paid launch, have the privacy/terms pages reviewed by counsel and
+  set a monitored contact address.
 
 ## Security and privacy
 
@@ -318,6 +343,9 @@ npm run start -w @quintara/web
 - Public history lists public-room results only. Private-room summaries remain
   replayable by their unguessable game ID for participants, but their player
   names are not published in the shared history feed.
+- Active room state is discarded when a room closes. Finished games are retained
+  in the in-memory store (currently up to 500 games and 200 summaries) until the
+  server restarts or older records are evicted.
 - Guest identity tokens are device-scoped and signed with
   `QUINTARA_AUTH_SECRET`. There are no accounts or password-based logins yet.
 - HTTP rate limits are per-process. Multi-instance deployments should add
@@ -325,7 +353,47 @@ npm run start -w @quintara/web
 
 To report a security issue, please use GitHub's [private security advisory
 flow](https://github.com/vskrch/Quintara/security/advisories/new) rather than
-opening a public issue.
+opening a public issue. See [`SECURITY.md`](SECURITY.md) for scope, the
+good-faith no-action statement, and response expectations.
+
+## Legal
+
+Quintara is **proprietary software**. The repository is publicly viewable for
+portfolio and evaluation purposes, but it is not open source. No license is
+granted for reuse, redistribution, or derivative works except as stated in
+[`LICENSE`](LICENSE).
+
+- **Copyright** — © 2026 Venkata Sai Krishna Chirasani, to the extent copyright
+  and other rights subsist and are owned. All rights reserved.
+- **AI assistance** — the project used substantial AI assistance while human
+  creative direction, selection, editing, integration, testing, and review were
+  predominant. See
+  [`docs/ai-assistance-disclosure.md`](docs/ai-assistance-disclosure.md).
+- **Trademarks** — QUINTARA and the Quintara lattice logo are used as
+  unregistered common-law marks by the project owner. No registered trademark
+  is claimed. See [`TRADEMARK.md`](TRADEMARK.md) for status, including an
+  adverse US Class 9 registration owned by Brilliant Systems LLC. Use **™**,
+  not **®**, unless a registration issues.
+- **Non-affiliation** — Quintara is an independent project. It is not
+  affiliated with, endorsed by, or sponsored by Jax Ltd., Goliath Games, Goliath
+  IP Stichting, or the publishers of the board game _Sequence_. _Sequence_ is a
+  registered trademark of Goliath IP Stichting; Jax Ltd., Inc. was the original
+  registrant.
+- **Third-party components** — dependencies and fonts remain under their own
+  licenses. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md),
+  [`docs/third-party-licenses.md`](docs/third-party-licenses.md), and the
+  in-app [`/licenses`](apps/web/src/app/licenses/page.tsx) page.
+- **Contributions** — by submitting a pull request or patch, you agree to the
+  contribution terms in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+- **Risk review and defense file** — the practical IP review, open questions,
+  and launch checklist are in
+  [`docs/legal-risk-review.md`](docs/legal-risk-review.md). The
+  litigation-response checklist is in
+  [`docs/defense-playbook.md`](docs/defense-playbook.md).
+
+This section is not legal advice. Before a commercial launch, obtain a formal
+trademark clearance search, copyright registrations, and a patent
+freedom-to-operate review from qualified counsel in your target markets.
 
 ## Project status
 
@@ -406,7 +474,10 @@ The server rejects documented placeholder secrets in production.
 
 ## Contributing
 
-Issues and pull requests are welcome. Before opening a PR:
+Issues and pull requests are welcome, subject to the contribution terms in
+[`CONTRIBUTING.md`](CONTRIBUTING.md). In short: the project is proprietary, and
+by submitting a contribution you grant the project owner a broad, irrevocable
+license to use it. Before opening a PR:
 
 ```bash
 npm ci
@@ -424,6 +495,11 @@ relevant.
 
 ## License
 
-This repository is publicly viewable for portfolio and evaluation purposes. It
-is **not open source**: no license is granted for reuse, redistribution, or
-derivative works. See `package.json` (`"license": "UNLICENSED"`).
+Quintara is **proprietary** and **not open source**. The repository is publicly
+viewable for portfolio and evaluation purposes, but no license is granted for
+reuse, redistribution, hosting, or derivative works except as stated in
+[`LICENSE`](LICENSE). The root `package.json` uses `"license": "UNLICENSED"`.
+
+Third-party components remain under their own licenses; see
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The QUINTARA name and logo
+are trademarks of the project owner; see [`TRADEMARK.md`](TRADEMARK.md).

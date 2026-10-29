@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Quintara shared protocol types (WebSocket messages, rooms, presence).",
   "license": "UNLICENSED",
+  "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Quintara deterministic game engine — pure TypeScript, zero React/DOM/database/WebSocket code.",
   "license": "UNLICENSED",
+  "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

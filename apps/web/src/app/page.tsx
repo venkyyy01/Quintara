@@ -19,7 +19,8 @@ export default function HomePage() {
         <h1
           className="text-6xl font-bold tracking-[0.18em] sm:text-7xl"
           style={{
-            background: "linear-gradient(180deg, #f8e3b2, var(--color-accent) 65%, #a97f36)",
+            background:
+              "linear-gradient(180deg, #f8e3b2, var(--color-accent) 65%, #a97f36)",
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent",
             filter: "drop-shadow(0 12px 30px rgba(215, 173, 98, 0.25))",
@@ -32,24 +33,37 @@ export default function HomePage() {
         </p>
 
         <div className="mt-10 flex w-full max-w-sm flex-col gap-3">
-          <Link href="/play/local?quick=1" className="btn btn-primary w-full py-4 text-lg">
+          <Link
+            href="/play/local?quick=1"
+            className="btn btn-primary w-full py-4 text-lg"
+          >
             ⚡ Quick Play
           </Link>
           <div className="grid grid-cols-2 gap-3">
             <Link href="/play/online" className="btn btn-secondary py-3.5">
               Play with Friends
             </Link>
-            <Link href="/play/local?mode=solo" className="btn btn-secondary py-3.5">
+            <Link
+              href="/play/local?mode=solo"
+              className="btn btn-secondary py-3.5"
+            >
               Play AI
             </Link>
           </div>
-          <Link href="/play/local?mode=pass" className="btn btn-secondary w-full py-3.5">
+          <Link
+            href="/play/local?mode=pass"
+            className="btn btn-secondary w-full py-3.5"
+          >
             Local Game
           </Link>
         </div>
 
         <div className="mt-8 grid w-full max-w-lg grid-cols-2 gap-3 sm:grid-cols-4">
-          <HomeTile href="/play/local?mode=solo&challenge=1" label="Daily Challenge" icon="◈" />
+          <HomeTile
+            href="/play/local?mode=solo&challenge=1"
+            label="Daily Challenge"
+            icon="◈"
+          />
           <HomeTile href="/rules" label="How to Play" icon="📖" />
           <HomeTile href="/tutorial" label="Tutorial" icon="🎓" />
           <HomeTile href="/settings" label="Settings" icon="⚙" />
@@ -75,10 +89,18 @@ export default function HomePage() {
           <Link href="/terms" className="hover:text-accent">
             Terms
           </Link>
+          <Link href="/licenses" className="hover:text-accent">
+            Licenses
+          </Link>
           <Link href="/offline" className="hover:text-accent">
             Offline help
           </Link>
         </nav>
+        <p className="mt-4 max-w-md text-[11px] leading-relaxed text-secondary">
+          Quintara is an independent project. It is not affiliated with,
+          endorsed by, or sponsored by Jax Ltd., Goliath Games, Goliath IP
+          Stichting, or the publishers of the board game <em>Sequence</em>.
+        </p>
       </div>
     </main>
   );
@@ -110,7 +132,8 @@ function HomeTile({
 function AmbientBoard() {
   return (
     <div className="pointer-events-none absolute inset-0" aria-hidden>
-      <div className="absolute left-1/2 top-[-14%] h-[560px] w-[560px] -translate-x-1/2 rounded-full opacity-[0.16]"
+      <div
+        className="absolute left-1/2 top-[-14%] h-[560px] w-[560px] -translate-x-1/2 rounded-full opacity-[0.16]"
         style={{
           background:
             "radial-gradient(circle, rgba(215,173,98,0.55), transparent 65%)",

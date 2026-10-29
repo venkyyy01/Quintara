@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Sora } from "next/font/google";
 import "./globals.css";
 import { PwaBootstrap } from "@/components/PwaBootstrap";
+import { getSiteUrl } from "@/lib/site";
 
 const sora = Sora({
   subsets: ["latin"],
@@ -16,9 +17,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL ?? "https://quintara.game",
-  ),
+  metadataBase: new URL(getSiteUrl()),
   title: {
     default: "QUINTARA — Build the line. Break the plan. Own the board.",
     template: "%s · QUINTARA",
