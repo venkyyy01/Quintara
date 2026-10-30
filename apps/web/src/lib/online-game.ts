@@ -170,10 +170,11 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
             case "SEQUENCE_COMPLETED":
               summaries.push("Line completed!");
               sounds.sequence();
-              haptic("medium");
+              haptic("success");
               break;
             case "DEAD_CARD_EXCHANGED":
               summaries.push("Dead card exchanged");
+              sounds.exchange();
               break;
             case "TURN_SKIPPED_NO_LEGAL_ACTION":
               summaries.push("Turn skipped — no legal moves");
@@ -181,7 +182,7 @@ export const useOnlineGame = create<OnlineGameState>((set, get) => {
             case "GAME_WON":
               summaries.push("Game over!");
               sounds.victory();
-              haptic("medium");
+              haptic("victory");
               break;
           }
         }

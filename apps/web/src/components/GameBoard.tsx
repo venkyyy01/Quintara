@@ -133,118 +133,126 @@ export function GameBoard({
   );
 
   return (
-    <div className="board-surface w-full">
-      <p id="board-instructions" className="sr-only">
-        Quintara board. Use the arrow keys to move between cells, Home and End
-        to jump across a row, and Enter or Space to play on a highlighted
-        target. Only highlighted cells accept a move.
-      </p>
-      <div
-        className="board-grid"
-        role="grid"
-        aria-label="Quintara game board"
-        aria-describedby="board-instructions"
-        aria-rowcount={projected.boardDefinition.height}
-        aria-colcount={projected.boardDefinition.width}
-        aria-busy={disabled || undefined}
-      >
-        {rows.map((rowCells) => (
-          <div key={rowCells[0]?.row ?? 0} role="row" className="board-row">
-            {rowCells.map((cell) => {
-              const occupancy = projected.boardCells[cell.id];
-              const occupantTeamId = occupancy?.occupantTeamId ?? null;
-              const isWild = cell.type === "WILD_CORNER";
-              const isLegal = legalTargets.has(cell.id);
-              const isRemovable = removableTargets.has(cell.id);
-              const isProtected = protectedCells.has(cell.id);
+    <div className="board-stage">
+      <div className="board-surface w-full">
+        <p id="board-instructions" className="sr-only">
+          Quintara board. Use the arrow keys to move between cells, Home and End
+          to jump across a row, and Enter or Space to play on a highlighted
+          target. Only highlighted cells accept a move.
+        </p>
+        <div className="relative">
+          <div
+            className="board-grid"
+            role="grid"
+            aria-label="Quintara game board"
+            aria-describedby="board-instructions"
+            aria-rowcount={projected.boardDefinition.height}
+            aria-colcount={projected.boardDefinition.width}
+            aria-busy={disabled || undefined}
+          >
+            {rows.map((rowCells) => (
+              <div key={rowCells[0]?.row ?? 0} role="row" className="board-row">
+                {rowCells.map((cell) => {
+                  const occupancy = projected.boardCells[cell.id];
+                  const occupantTeamId = occupancy?.occupantTeamId ?? null;
+                  const isWild = cell.type === "WILD_CORNER";
+                  const isLegal = legalTargets.has(cell.id);
+                  const isRemovable = removableTargets.has(cell.id);
+                  const isProtected = protectedCells.has(cell.id);
 
-              const dimmed =
-                selecting && showLegalMoves && !isLegal && !isRemovable;
-              const classes = [
-                "board-cell",
-                isWild ? "is-wild" : "",
-                showLegalMoves && isLegal ? "is-legal" : "",
-                showLegalMoves && isRemovable ? "is-targetable" : "",
-                dimmed ? "is-dimmed" : "",
-              ]
-                .filter(Boolean)
-                .join(" ");
+                  const dimmed =
+                    selecting && showLegalMoves && !isLegal && !isRemovable;
+                  const classes = [
+                    "board-cell",
+                    isWild ? "is-wild" : "",
+                    showLegalMoves && isLegal ? "is-legal" : "",
+                    showLegalMoves && isRemovable ? "is-targetable" : "",
+                    dimmed ? "is-dimmed" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
 
-              const actionHint = isLegal
-                ? " Legal move."
-                : isRemovable
-                  ? " You can remove this marker."
-                  : "";
-              const label =
-                cell.type === "WILD_CORNER"
-                  ? `Row ${cell.row + 1} column ${cell.column + 1}. Wild corner.${actionHint}`
-                  : `Row ${cell.row + 1} column ${cell.column + 1}. ${cardLabel(cell.cardCode)}.${occupantTeamId ? ` Occupied by ${teamName(projected, occupantTeamId)}.` : " Open."}${isProtected ? " Protected sequence marker." : ""}${actionHint}`;
+                  const actionHint = isLegal
+                    ? " Legal move."
+                    : isRemovable
+                      ? " You can remove this marker."
+                      : "";
+                  const label =
+                    cell.type === "WILD_CORNER"
+                      ? `Row ${cell.row + 1} column ${cell.column + 1}. Wild corner.${actionHint}`
+                      : `Row ${cell.row + 1} column ${cell.column + 1}. ${cardLabel(cell.cardCode)}.${occupantTeamId ? ` Occupied by ${teamName(projected, occupantTeamId)}.` : " Open."}${isProtected ? " Protected sequence marker." : ""}${actionHint}`;
 
-              return (
-                <button
-                  key={cell.id}
-                  ref={(node) => {
-                    if (node) cellRefs.current.set(cell.id, node);
-                    else cellRefs.current.delete(cell.id);
-                  }}
-                  type="button"
-                  role="gridcell"
-                  data-cell-id={cell.id}
-                  aria-rowindex={cell.row + 1}
-                  aria-colindex={cell.column + 1}
-                  aria-label={label}
-                  aria-disabled={disabled || (!isLegal && !isRemovable)}
-                  tabIndex={focusedCellId === cell.id ? 0 : -1}
-                  className={classes}
-                  onFocus={() => setFocusedCellId(cell.id)}
-                  onKeyDown={(event) =>
-                    onCellKeyDown(event, cell.row, cell.column)
-                  }
-                  onClick={() => {
-                    // Callers decide whether a non-target cell is a no-op or
-                    // explanatory feedback (the tutorial uses the latter).
-                    if (!disabled) onCellClick(cell.id);
-                  }}
-                  style={{
-                    cursor:
-                      disabled || (!isLegal && !isRemovable)
-                        ? "default"
-                        : "pointer",
-                    opacity: dimmed ? 0.38 : 1,
-                  }}
-                >
-                  {cell.type === "CARD" ? (
-                    <CardFace
-                      rank={cell.cardCode.slice(0, -1)}
-                      suit={cell.cardCode.slice(-1)}
-                    />
-                  ) : (
-                    <WildCornerGlyph />
-                  )}
-
-                  {occupantTeamId && (
-                    <TeamMarker
-                      teamId={occupantTeamId}
-                      teamName={teamName(projected, occupantTeamId)}
-                      isNew={lastPlacedCellId === cell.id && !reduced}
-                      animationSpeed={animationSpeed}
-                      compact
-                    />
-                  )}
-
-                  {isProtected && occupantTeamId && (
-                    <span
-                      className="sequence-trace"
-                      style={{
-                        boxShadow: `inset 0 0 0 2px ${teamVisual(occupantTeamId).ringColor}cc`,
+                  return (
+                    <button
+                      key={cell.id}
+                      ref={(node) => {
+                        if (node) cellRefs.current.set(cell.id, node);
+                        else cellRefs.current.delete(cell.id);
                       }}
-                    />
-                  )}
-                </button>
-              );
-            })}
+                      type="button"
+                      role="gridcell"
+                      data-cell-id={cell.id}
+                      aria-rowindex={cell.row + 1}
+                      aria-colindex={cell.column + 1}
+                      aria-label={label}
+                      aria-disabled={disabled || (!isLegal && !isRemovable)}
+                      tabIndex={focusedCellId === cell.id ? 0 : -1}
+                      className={classes}
+                      onFocus={() => setFocusedCellId(cell.id)}
+                      onKeyDown={(event) =>
+                        onCellKeyDown(event, cell.row, cell.column)
+                      }
+                      onClick={() => {
+                        // Callers decide whether a non-target cell is a no-op or
+                        // explanatory feedback (the tutorial uses the latter).
+                        if (!disabled) onCellClick(cell.id);
+                      }}
+                      style={{
+                        cursor:
+                          disabled || (!isLegal && !isRemovable)
+                            ? "default"
+                            : "pointer",
+                        opacity: dimmed ? 0.38 : 1,
+                      }}
+                    >
+                      {cell.type === "CARD" ? (
+                        <CardFace
+                          rank={cell.cardCode.slice(0, -1)}
+                          suit={cell.cardCode.slice(-1)}
+                        />
+                      ) : (
+                        <WildCornerGlyph />
+                      )}
+
+                      {occupantTeamId && (
+                        <TeamMarker
+                          teamId={occupantTeamId}
+                          teamName={teamName(projected, occupantTeamId)}
+                          isNew={lastPlacedCellId === cell.id && !reduced}
+                          animationSpeed={animationSpeed}
+                          compact
+                        />
+                      )}
+
+                      {isProtected && occupantTeamId && (
+                        <span
+                          className="sequence-trace"
+                          style={{
+                            boxShadow: `inset 0 0 0 2px ${teamVisual(occupantTeamId).ringColor}cc`,
+                          }}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
-        ))}
+          <SequenceTraceOverlay
+            projected={projected}
+            speed={animationSpeed}
+          />
+        </div>
       </div>
     </div>
   );

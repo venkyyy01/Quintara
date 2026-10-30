@@ -32,35 +32,53 @@ export function TeamMarker({
       className="absolute inset-0 flex items-center justify-center"
       initial={
         isNew && !reduced
-          ? { y: "-28%", scaleY: 0.7, opacity: 0 }
+          ? { y: "-58%", scale: 0.55, rotateX: 35, opacity: 0 }
           : false
       }
-      animate={{ y: 0, scaleY: 1, opacity: 1 }}
+      animate={{ y: 0, scale: 1, rotateX: 0, opacity: 1 }}
       transition={
         reduced
           ? { duration: 0.01 }
           : {
               type: "spring",
-              stiffness: 520,
-              damping: 26,
-              duration: 0.32 / (animationSpeed || 1),
+              stiffness: 480,
+              damping: 22,
+              mass: 0.7,
+              duration: 0.36 / (animationSpeed || 1),
             }
       }
       role="img"
       aria-label={markerLabel(teamId, teamName)}
+      style={{ transformStyle: "preserve-3d" }}
     >
+      <span className="marker-shadow" aria-hidden />
       <div
         className={`team-marker ${visual.markerClass}`}
-        style={{ width: compact ? "58%" : "64%", height: compact ? "58%" : "64%" }}
+        style={{
+          width: compact ? "58%" : "64%",
+          height: compact ? "58%" : "64%",
+        }}
       />
       {isNew && !reduced && (
-        <motion.div
-          className="absolute inset-0 rounded-full"
-          style={{ border: `2px solid ${visual.ringColor}` }}
-          initial={{ scale: 0.6, opacity: 0.8 }}
-          animate={{ scale: 1.45, opacity: 0 }}
-          transition={{ duration: 0.45 / (animationSpeed || 1) }}
-        />
+        <>
+          <motion.div
+            className="absolute inset-0 rounded-full"
+            style={{ border: `2px solid ${visual.ringColor}` }}
+            initial={{ scale: 0.55, opacity: 0.9 }}
+            animate={{ scale: 1.55, opacity: 0 }}
+            transition={{ duration: 0.55 / (animationSpeed || 1) }}
+          />
+          <motion.div
+            className="absolute inset-0 rounded-full"
+            style={{ border: `1px solid ${visual.ringColor}` }}
+            initial={{ scale: 0.4, opacity: 0.7 }}
+            animate={{ scale: 1.15, opacity: 0 }}
+            transition={{
+              duration: 0.4 / (animationSpeed || 1),
+              delay: 0.08,
+            }}
+          />
+        </>
       )}
     </motion.div>
   );

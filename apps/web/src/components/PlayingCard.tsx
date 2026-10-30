@@ -66,6 +66,30 @@ export function PlayingCard({
 
   const description = `${cardLabel(code)}${dead ? ", dead" : playable ? ", playable" : ""}${ariaHint ? `. ${ariaHint}` : ""}`;
 
+  function handlePointerMove(event: React.PointerEvent<HTMLButtonElement>): void {
+    if (event.pointerType === "touch" || disabled) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width;
+    const y = (event.clientY - rect.top) / rect.height;
+    event.currentTarget.style.setProperty(
+      "--card-rotate-y",
+      `${((x - 0.5) * 16).toFixed(2)}deg`,
+    );
+    event.currentTarget.style.setProperty(
+      "--card-rotate-x",
+      `${((y - 0.5) * -16).toFixed(2)}deg`,
+    );
+    event.currentTarget.style.setProperty("--card-glow-x", `${x * 100}%`);
+    event.currentTarget.style.setProperty("--card-glow-y", `${y * 100}%`);
+  }
+
+  function resetTilt(event: React.PointerEvent<HTMLButtonElement>): void {
+    event.currentTarget.style.setProperty("--card-rotate-y", "0deg");
+    event.currentTarget.style.setProperty("--card-rotate-x", "0deg");
+    event.currentTarget.style.setProperty("--card-glow-x", "50%");
+    event.currentTarget.style.setProperty("--card-glow-y", "0%");
+  }
+
   return (
     <button
       type="button"
@@ -76,6 +100,9 @@ export function PlayingCard({
         padding: compact ? "4px" : "6px",
       }}
       onClick={onClick}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={resetTilt}
+      onPointerCancel={resetTilt}
       disabled={disabled}
       aria-label={description}
       aria-pressed={selected}

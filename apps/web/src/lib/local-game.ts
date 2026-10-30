@@ -444,7 +444,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
     } else if (command.type === "PLAY_WILD_JACK") {
       const cell = command.targetCellId.replace("r", "R").replace("c", "C");
       summaries.push(`Two-Eyed Jack → ${cell}`);
-      sounds.place();
+      sounds.jack();
       haptic("light");
     } else if (command.type === "PLAY_REMOVE_JACK") {
       const cell = command.targetCellId.replace("r", "R").replace("c", "C");
@@ -453,7 +453,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
       haptic("light");
     } else if (command.type === "EXCHANGE_DEAD_CARD") {
       summaries.push("Dead card exchanged");
-      sounds.draw();
+      sounds.exchange();
     } else if (command.type === "SELECT_SEQUENCE_SET") {
       summaries.push("Line completed!");
     }
@@ -500,7 +500,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
       }
       if (state.winnerTeamId) {
         sounds.victory();
-        haptic("medium");
+        haptic("victory");
       }
       return;
     }
@@ -610,6 +610,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
     selectCard: (cardId) => {
       set({ selectedCardId: get().selectedCardId === cardId ? null : cardId });
       sounds.select();
+      haptic("selection");
     },
 
     playAt: (cellId) => {
@@ -681,6 +682,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
           : currentPlayerId(state);
       if (!viewerId) return;
       sounds.sequence();
+      haptic("success");
       dispatch({
         type: "SELECT_SEQUENCE_SET",
         playerId: viewerId,
@@ -700,6 +702,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
     acknowledgeHandoff: () => {
       set({ awaitingHandoff: false });
       sounds.turn();
+      haptic("light");
     },
 
     dismissToast: (id) => {

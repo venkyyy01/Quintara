@@ -5,14 +5,31 @@
 
 "use client";
 
-import { useEffect, useId, useRef } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useId, useRef, type CSSProperties } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import type {
   ProjectedState,
   SequenceSelectionOption,
 } from "@quintara/game-engine";
 import { clearLocalData, useSettings } from "@/lib/settings";
 import { TeamBadge } from "./TeamMarker";
+
+const CONFETTI_COLORS = [
+  "#d7ad62",
+  "#f6dda6",
+  "#3f83f8",
+  "#4fc18c",
+  "#ef5350",
+  "#e3b341",
+];
+
+const CONFETTI = Array.from({ length: 30 }, (_, index) => ({
+  x: `${(index * 37 + 11) % 100}%`,
+  drift: `${((index * 53) % 130) - 65}px`,
+  delay: `${(index % 10) * 0.07}s`,
+  duration: `${2.4 + (index % 6) * 0.22}s`,
+  color: CONFETTI_COLORS[index % CONFETTI_COLORS.length] ?? "#d7ad62",
+}));
 
 /**
  * Modal focus management: initial focus, Tab/Shift+Tab containment, Escape
@@ -104,6 +121,8 @@ export function VictoryModal({
       projected.winnerTeamId;
   const titleId = useId();
   const panelRef = useDialogFocus(onQuit);
+  const reduced = useReducedMotion();
+  const showCelebration = !isDraw && !reduced;
 
   return (
     <div className="overlay">
@@ -113,84 +132,123 @@ export function VictoryModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="panel w-full max-w-md p-8 text-center"
-        initial={{ scale: 0.92, opacity: 0, y: 18 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
+        className="panel panel-gold victory-panel w-full max-w-md p-7 text-center sm:p-8"
+        initial={{ scale: 0.9, opacity: 0, y: 26, rotateX: 8 }}
+        animate={{ scale: 1, opacity: 1, y: 0, rotateX: 0 }}
         transition={{ type: "spring", stiffness: 220, damping: 22 }}
       >
-        <motion.h2
-          id={titleId}
-          className="text-4xl font-bold tracking-[0.12em]"
-          style={{
-            background: "linear-gradient(180deg, #f6d99a, var(--color-accent))",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-          }}
-          initial={{ letterSpacing: "0.3em", opacity: 0 }}
-          animate={{ letterSpacing: "0.12em", opacity: 1 }}
-          transition={{ delay: 0.15, duration: 0.5 }}
-        >
-          {isDraw
-            ? "STALEMATE"
-            : neutralResult
-              ? `${winner?.name ?? "WINNER"} WINS`
-              : viewerWon
-                ? "VICTORY"
-                : "DEFEAT"}
-        </motion.h2>
-
-        {!isDraw && winner && (
-          <p className="mt-3 flex items-center justify-center gap-2 text-lg">
-            <TeamBadge teamId={winner.id} teamName={winner.name} size={20} />
-            <span>
-              {winner.name} completed{" "}
-              {projected.requiredSequences}{" "}
-              {projected.requiredSequences === 1 ? "line" : "lines"}
-            </span>
-          </p>
-        )}
-        {isDraw && (
-          <p className="mt-3 text-text-secondary">
-            No side could make progress — the game ends in a draw.
-          </p>
+        {showCelebration && (
+          <div className="victory-burst" aria-hidden>
+            {CONFETTI.map((piece, index) => (
+              <span
+                key={index}
+                className="confetti"
+                style={
+                  {
+                    "--confetti-x": piece.x,
+                    "--confetti-drift": piece.drift,
+                    "--confetti-delay": piece.delay,
+                    "--confetti-duration": piece.duration,
+                    "--confetti-color": piece.color,
+                  } as CSSProperties
+                }
+              />
+            ))}
+          </div>
         )}
 
-        <div className="mt-4 grid grid-cols-2 gap-2 text-left text-xs text-secondary">
-          <div className="rounded-lg bg-white/5 p-2.5">
-            Turns played
-            <p className="text-lg font-bold text-text-primary">
-              {projected.turnNumber}
+        <div className="relative z-10">
+          <motion.div
+            className="trophy-ring"
+            initial={reduced ? false : { scale: 0.5, rotate: -12, opacity: 0 }}
+            animate={{ scale: 1, rotate: 0, opacity: 1 }}
+            transition={{ delay: 0.1, type: "spring", stiffness: 240, damping: 16 }}
+          >
+            <span aria-hidden>{isDraw ? "⚖" : viewerWon || neutralResult ? "🏆" : "🛡"}</span>
+          </motion.div>
+
+          <motion.h2
+            id={titleId}
+            className="text-4xl font-bold tracking-[0.12em]"
+            style={{
+              background:
+                "linear-gradient(180deg, #f8e3b2, var(--color-accent) 65%, #a97f36)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              filter: "drop-shadow(0 8px 22px rgba(215, 173, 98, 0.3))",
+            }}
+            initial={{ letterSpacing: "0.3em", opacity: 0 }}
+            animate={{ letterSpacing: "0.12em", opacity: 1 }}
+            transition={{ delay: 0.15, duration: 0.5 }}
+          >
+            {isDraw
+              ? "STALEMATE"
+              : neutralResult
+                ? `${winner?.name ?? "WINNER"} WINS`
+                : viewerWon
+                  ? "VICTORY"
+                  : "DEFEAT"}
+          </motion.h2>
+
+          {!isDraw && winner && (
+            <p className="mt-3 flex items-center justify-center gap-2 text-lg">
+              <TeamBadge teamId={winner.id} teamName={winner.name} size={20} />
+              <span>
+                {winner.name} completed {projected.requiredSequences}{" "}
+                {projected.requiredSequences === 1 ? "line" : "lines"}
+              </span>
             </p>
-          </div>
-          <div className="rounded-lg bg-white/5 p-2.5">
-            Duration
-            <p className="text-lg font-bold text-text-primary">
-              {formatDuration(projected)}
+          )}
+          {isDraw && (
+            <p className="mt-3 text-text-secondary">
+              No side could make progress — the game ends in a draw.
             </p>
-          </div>
-          {projected.teams.map((team) => (
-            <div key={team.id} className="rounded-lg bg-white/5 p-2.5">
-              {team.name} lines
+          )}
+
+          <div className="mt-5 grid grid-cols-2 gap-2 text-left text-xs text-secondary">
+            <div className="rounded-xl border border-white/6 bg-white/[0.04] p-2.5">
+              Turns played
               <p className="text-lg font-bold text-text-primary">
-                {team.sequenceCount}
+                {projected.turnNumber}
               </p>
             </div>
-          ))}
-        </div>
+            <div className="rounded-xl border border-white/6 bg-white/[0.04] p-2.5">
+              Duration
+              <p className="text-lg font-bold text-text-primary">
+                {formatDuration(projected)}
+              </p>
+            </div>
+            {projected.teams.map((team) => (
+              <div
+                key={team.id}
+                className="rounded-xl border border-white/6 bg-white/[0.04] p-2.5"
+              >
+                {team.name} lines
+                <p className="text-lg font-bold text-text-primary">
+                  {team.sequenceCount}
+                </p>
+              </div>
+            ))}
+          </div>
 
-        <div className="mt-6 flex flex-wrap justify-center gap-2.5">
-          {hideRematch ? (
-            <p className="w-full text-center text-xs text-secondary">
-              Waiting for the host to start the rematch…
-            </p>
-          ) : (
-            <button type="button" className="btn btn-primary" onClick={onRematch}>
-              Rematch
+          <div className="mt-6 flex flex-wrap justify-center gap-2.5">
+            {hideRematch ? (
+              <p className="w-full text-center text-xs text-secondary">
+                Waiting for the host to start the rematch…
+              </p>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={onRematch}
+              >
+                Rematch
+              </button>
+            )}
+            <button type="button" className="btn btn-secondary" onClick={onQuit}>
+              Return Home
             </button>
-          )}
-          <button type="button" className="btn btn-secondary" onClick={onQuit}>
-            Return Home
-          </button>
+          </div>
         </div>
       </motion.div>
     </div>
@@ -225,11 +283,12 @@ export function PassDeviceScreen({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="panel w-full max-w-sm p-8 text-center"
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
+        className="panel panel-gold w-full max-w-sm p-8 text-center"
+        initial={{ opacity: 0, y: 22, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ type: "spring", stiffness: 240, damping: 22 }}
       >
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-accent-soft text-3xl">
+        <div className="trophy-ring mx-auto mb-4" style={{ fontSize: "1.9rem" }}>
           🃏
         </div>
         <h2 id={titleId} className="text-xl font-bold">

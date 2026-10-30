@@ -75,13 +75,20 @@ export function PlayerHand({
         return (
           <motion.div
             key={card.id}
-            initial={reduced ? false : { y: 26, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
+            initial={
+              reduced
+                ? false
+                : { y: 34, opacity: 0, rotateX: 28, scale: 0.92 }
+            }
+            animate={{ y: 0, opacity: 1, rotateX: 0, scale: 1 }}
             transition={{
-              delay: reduced ? 0 : index * 0.05,
-              duration: 0.3,
+              delay: reduced ? 0 : index * 0.055,
+              type: "spring",
+              stiffness: 320,
+              damping: 26,
             }}
             className="flex flex-col items-center gap-1.5"
+            style={{ transformStyle: "preserve-3d" }}
           >
             <PlayingCard
               code={card.code}

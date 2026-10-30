@@ -17,38 +17,53 @@ export function PlayersPanel({
   viewerId: string | null;
 }) {
   return (
-    <section className="panel p-4" aria-label="Players">
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-secondary">
+    <section className="panel p-3 sm:p-4" aria-label="Players">
+      <h2 className="mb-2.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-secondary">
+        <span className="h-px w-4 bg-gradient-to-r from-accent/80 to-transparent" aria-hidden />
         Players
       </h2>
-      <ul className="flex flex-col gap-2.5">
+      <ul className="players-list">
         {projected.players.map((player) => {
           const team = projected.teams.find((t) => t.id === player.teamId);
           const sequenceCount = team?.sequenceCount ?? 0;
+          const pips = Math.max(projected.requiredSequences, sequenceCount, 1);
           return (
             <li
               key={player.id}
-              className={`flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 ${
-                player.isCurrentPlayer
-                  ? "bg-accent-soft ring-1 ring-[rgba(215,173,98,0.45)]"
-                  : ""
-              }`}
+              className={`player-row ${player.isCurrentPlayer ? "is-current" : ""}`}
             >
-              <TeamBadge teamId={player.teamId} teamName={team?.name ?? ""} />
+              <span className="avatar-ring">
+                <TeamBadge
+                  teamId={player.teamId}
+                  teamName={team?.name ?? ""}
+                  size={22}
+                />
+              </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">
                   {player.name}
-                  {player.id === viewerId && (
-                    <span className="ml-1.5 text-[0.62rem] font-bold uppercase tracking-wider text-accent">
-                      You
-                    </span>
-                  )}
+                  {player.id === viewerId &&
+                    player.name.trim().toLowerCase() !== "you" && (
+                      <span className="ml-1.5 text-[0.58rem] font-bold uppercase tracking-wider text-accent">
+                        You
+                      </span>
+                    )}
                 </p>
-                <p className="text-[0.68rem] text-secondary">
-                  {team?.name} · {sequenceCount}{" "}
-                  {sequenceCount === 1 ? "line" : "lines"} ·{" "}
-                  {player.cardCount} {player.cardCount === 1 ? "card" : "cards"}
+                <p className="mt-0.5 truncate text-[0.66rem] text-secondary">
+                  {team?.name} · {player.cardCount}{" "}
+                  {player.cardCount === 1 ? "card" : "cards"}
                 </p>
+                <span
+                  className="sequence-pips"
+                  aria-label={`${sequenceCount} of ${pips} lines complete`}
+                >
+                  {Array.from({ length: pips }).map((_, index) => (
+                    <span
+                      key={index}
+                      className={`sequence-pip ${index < sequenceCount ? "is-filled" : ""}`}
+                    />
+                  ))}
+                </span>
               </div>
               {player.isCurrentPlayer && (
                 <span
@@ -63,7 +78,7 @@ export function PlayersPanel({
         })}
       </ul>
 
-      <div className="mt-4 border-t border-white/8 pt-3">
+      <div className="mt-4 hidden border-t border-white/8 pt-3 lg:block">
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-secondary">
           Goal
         </h3>
@@ -104,23 +119,24 @@ export function MatchInfo({
 }) {
   return (
     <section className="panel p-4" aria-label="Match information">
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-secondary">
+      <h2 className="mb-2.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-secondary">
+        <span className="h-px w-4 bg-gradient-to-r from-accent/80 to-transparent" aria-hidden />
         Match
       </h2>
-      <dl className="flex flex-col gap-2 text-sm">
-        <div className="flex items-center justify-between">
+      <dl className="flex flex-col gap-0.5 text-sm">
+        <div className="stat-row">
           <dt className="text-secondary">Draw pile</dt>
           <dd className="font-semibold">{projected.drawPileCount}</dd>
         </div>
-        <div className="flex items-center justify-between">
+        <div className="stat-row">
           <dt className="text-secondary">Turn</dt>
           <dd className="font-semibold">{projected.turnNumber}</dd>
         </div>
-        <div className="flex items-center justify-between">
+        <div className="stat-row">
           <dt className="text-secondary">Round</dt>
           <dd className="font-semibold">{round}</dd>
         </div>
-        <div className="flex items-center justify-between">
+        <div className="stat-row">
           <dt className="text-secondary">Turn owner</dt>
           <dd className="max-w-[55%] truncate font-semibold">{turnLabel}</dd>
         </div>
@@ -130,7 +146,7 @@ export function MatchInfo({
         <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-secondary">
           Last move
         </h3>
-        <p className="min-h-[2.2em] text-[0.78rem] text-text-primary">
+        <p className="min-h-[2.2em] rounded-lg bg-white/[0.03] px-2.5 py-2 text-[0.78rem] text-text-primary">
           {lastMoveSummary ?? "—"}
         </p>
       </div>
@@ -145,7 +161,7 @@ export function MatchInfo({
             return (
               <span
                 key={playerId}
-                className="rounded-md bg-white/5 px-2 py-1 text-[0.66rem] text-secondary"
+                className="rounded-md border border-white/6 bg-white/5 px-2 py-1 text-[0.66rem] text-secondary"
                 title={codes.join(", ")}
               >
                 {player?.name ?? playerId}: {codes.length}
@@ -194,24 +210,26 @@ export function TurnBanner({
   const timerUrgent = remainingSeconds !== null && remainingSeconds <= 10;
 
   return (
-    <div
-      className={`flex items-center gap-3 rounded-full px-4 py-2 ${
-        isYours
-          ? "bg-accent-soft ring-1 ring-[rgba(215,173,98,0.5)]"
-          : "bg-white/5"
-      }`}
-    >
+    <div className={`turn-banner ${isYours ? "is-yours" : ""}`}>
+      <span className={`turn-dot ${isYours ? "" : "opacity-60"}`} aria-hidden />
       {current && (
-        <TeamBadge teamId={current.teamId} teamName={team?.name ?? ""} size={16} />
+        <TeamBadge teamId={current.teamId} teamName={team?.name ?? ""} size={17} />
       )}
       <span
-        className={`text-sm font-bold tracking-wide ${
-          isYours ? "text-accent" : "text-text-primary"
+        className={`flex items-center gap-1.5 text-sm font-bold tracking-wide ${
+          isYours ? "text-accent-bright" : "text-text-primary"
         }`}
         role="status"
         aria-live="polite"
       >
         {text}
+        {botThinking && !isYours && (
+          <span className="thinking-dots" aria-hidden>
+            <span />
+            <span />
+            <span />
+          </span>
+        )}
       </span>
       {remainingSeconds !== null && projected.status === "ACTIVE" && (
         <span
@@ -224,7 +242,9 @@ export function TurnBanner({
           <span className="relative h-1.5 w-10 overflow-hidden rounded-full bg-white/10">
             <span
               className={`absolute inset-y-0 left-0 rounded-full ${
-                timerUrgent ? "bg-[var(--color-danger)]" : "bg-accent"
+                timerUrgent
+                  ? "bg-[var(--color-danger)]"
+                  : "bg-gradient-to-r from-[#f6dda6] to-accent"
               }`}
               style={{ width: `${Math.round(timerRatio * 100)}%` }}
             />

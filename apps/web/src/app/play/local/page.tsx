@@ -251,7 +251,7 @@ function SetupScreen(props: {
   const mode = props.mode ?? "SOLO";
 
   return (
-    <main className="mx-auto w-full max-w-2xl px-6 pb-16 pt-[calc(var(--safe-top)+2rem)]">
+    <main className="relative mx-auto w-full max-w-2xl px-6 pb-16 pt-[calc(var(--safe-top)+2rem)]">
       <button
         type="button"
         className="btn btn-ghost mb-6 px-2"
@@ -259,7 +259,11 @@ function SetupScreen(props: {
       >
         ← Back
       </button>
-      <h1 className="text-3xl font-bold">New Game</h1>
+      <span className="hero-eyebrow">
+        <span className="dot" aria-hidden />
+        Local table
+      </span>
+      <h1 className="mt-4 text-3xl font-bold sm:text-4xl">New Game</h1>
       <p className="mt-1.5 text-secondary">
         Choose how to play. All local modes work offline.
       </p>
@@ -267,18 +271,22 @@ function SetupScreen(props: {
       <div className="mt-6 grid grid-cols-2 gap-3">
         {(
           [
-            ["SOLO", "Play AI", "Face computer opponents"],
-            ["PASS_AND_PLAY", "Pass & Play", "Share one device"],
+            ["SOLO", "Play AI", "Face computer opponents", "🤖"],
+            ["PASS_AND_PLAY", "Pass & Play", "Share one device", "👥"],
           ] as const
-        ).map(([id, label, hint]) => (
+        ).map(([id, label, hint, icon]) => (
           <button
             key={id}
             type="button"
-            className={`panel p-4 text-left transition ${
-              mode === id ? "ring-2 ring-[var(--color-accent)]" : ""
+            className={`panel choice-card p-4 ${
+              mode === id ? "is-selected" : ""
             }`}
             onClick={() => props.setMode(id)}
+            aria-pressed={mode === id}
           >
+            <span className="mb-2 inline-grid h-9 w-9 place-items-center rounded-[10px] border border-white/8 bg-white/5 text-lg">
+              {icon}
+            </span>
             <p className="font-semibold">{label}</p>
             <p className="mt-1 text-xs text-secondary">{hint}</p>
           </button>
@@ -291,17 +299,28 @@ function SetupScreen(props: {
             Difficulty
           </h2>
           <div className="mt-2.5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            {DIFFICULTIES.map((entry) => (
+            {DIFFICULTIES.map((entry, index) => (
               <button
                 key={entry.id}
                 type="button"
-                className={`panel px-3 py-3 text-center ${
-                  props.difficulty === entry.id
-                    ? "ring-2 ring-[var(--color-accent)]"
-                    : ""
+                className={`panel choice-card px-3 py-3 text-center ${
+                  props.difficulty === entry.id ? "is-selected" : ""
                 }`}
                 onClick={() => props.setDifficulty(entry.id)}
+                aria-pressed={props.difficulty === entry.id}
               >
+                <span className="mb-1.5 flex justify-center gap-0.5" aria-hidden>
+                  {Array.from({ length: 4 }).map((_, bar) => (
+                    <span
+                      key={bar}
+                      className={`h-1 w-2.5 rounded-full ${
+                        bar <= index
+                          ? "bg-gradient-to-r from-[#f6dda6] to-accent"
+                          : "bg-white/10"
+                      }`}
+                    />
+                  ))}
+                </span>
                 <p className="text-sm font-semibold">{entry.label}</p>
                 <p className="mt-1 text-[0.66rem] leading-tight text-secondary">
                   {entry.hint}

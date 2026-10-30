@@ -249,10 +249,16 @@ export default function OnlinePage() {
 
   // Lobby / waiting room.
   return (
-    <main className="mx-auto w-full max-w-2xl px-6 pb-16 pt-[calc(var(--safe-top)+2rem)]">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Play Online</h1>
-        <Link href="/" className="btn btn-ghost">
+    <main className="relative mx-auto w-full max-w-2xl px-6 pb-16 pt-[calc(var(--safe-top)+2rem)]">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <span className="hero-eyebrow">
+            <span className="dot" aria-hidden />
+            Online arena
+          </span>
+          <h1 className="mt-3 text-3xl font-bold sm:text-4xl">Play Online</h1>
+        </div>
+        <Link href="/" className="btn btn-ghost shrink-0">
           ← Home
         </Link>
       </div>
@@ -273,21 +279,30 @@ export default function OnlinePage() {
         </div>
       )}
 
-      <div
-        className={`mt-3 text-sm ${online.connection === "connected" ? "text-success" : "text-accent"}`}
-        role="status"
-      >
-        {online.connection === "connected"
-          ? "● Connected"
-          : online.connection === "reconnecting"
-            ? "○ Reconnecting…"
-            : "○ Connecting…"}
+      <div className="mt-3" role="status">
+        <span
+          className={`connection-pill ${
+            online.connection === "connected" ? "is-online" : "is-offline"
+          }`}
+        >
+          <span className="status-dot" aria-hidden />
+          {online.connection === "connected"
+            ? "Connected"
+            : online.connection === "reconnecting"
+              ? "Reconnecting…"
+              : "Connecting…"}
+        </span>
       </div>
 
       {!online.room && (
         <>
-          <section className="panel mt-6 p-5">
-            <h2 className="font-semibold">Quick Match</h2>
+          <section className="panel panel-raised mt-6 p-5">
+            <h2 className="flex items-center gap-2 font-semibold">
+              <span className="text-accent" aria-hidden>
+                ⚡
+              </span>
+              Quick Match
+            </h2>
             <p className="mt-1 text-sm text-secondary">
               Find a compatible opponent automatically (§58).
             </p>
@@ -297,9 +312,13 @@ export default function OnlinePage() {
               disabled={!connected || online.matchmaking}
               onClick={online.quickMatch}
             >
-              {online.matchmaking
-                ? "Finding opponent…"
-                : "Find Opponent"}
+              {online.matchmaking && (
+                <span
+                  className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+                  aria-hidden
+                />
+              )}
+              {online.matchmaking ? "Finding opponent…" : "Find Opponent"}
             </button>
             {online.matchmaking && (
               <button
@@ -312,8 +331,13 @@ export default function OnlinePage() {
             )}
           </section>
 
-          <section className="panel mt-4 p-5">
-            <h2 className="font-semibold">Private Room</h2>
+          <section className="panel panel-raised mt-4 p-5">
+            <h2 className="flex items-center gap-2 font-semibold">
+              <span className="text-accent" aria-hidden>
+                ✦
+              </span>
+              Private Room
+            </h2>
             <p className="mt-1 text-sm text-secondary">
               Host a game and share the invite code.
             </p>
@@ -428,8 +452,13 @@ export default function OnlinePage() {
             </button>
           </section>
 
-          <section className="panel mt-4 p-5">
-            <h2 className="font-semibold">Join a Room</h2>
+          <section className="panel panel-raised mt-4 p-5">
+            <h2 className="flex items-center gap-2 font-semibold">
+              <span className="text-accent" aria-hidden>
+                ⌘
+              </span>
+              Join a Room
+            </h2>
             <div className="mt-3 flex gap-2">
               <input
                 type="text"
@@ -439,7 +468,7 @@ export default function OnlinePage() {
                 maxLength={8}
                 autoCapitalize="characters"
                 autoComplete="off"
-                className="flex-1 rounded-[10px] border border-white/10 bg-surface px-3.5 py-2.5 text-center text-lg font-semibold tracking-[0.3em] outline-none focus:border-[var(--color-accent)]"
+                className="flex-1 px-3.5 py-2.5 text-center text-lg font-semibold tracking-[0.3em]"
                 aria-label="Room code"
               />
               <button
@@ -473,17 +502,17 @@ export default function OnlinePage() {
       )}
 
       {online.room && (
-        <section className="panel mt-6 p-6">
-          <h2 className="flex items-center justify-between text-lg font-semibold">
-            Room{" "}
-            <span className="rounded-lg bg-accent-soft px-3 py-1 font-mono text-xl tracking-[0.25em] text-accent">
+        <section className="panel panel-raised mt-6 p-6">
+          <h2 className="flex flex-wrap items-center justify-between gap-3 text-lg font-semibold">
+            Room
+            <span className="room-code rounded-xl border border-accent/25 bg-accent-soft px-3 py-1 font-mono text-xl">
               {online.room.roomCode}
             </span>
           </h2>
           {online.room.options.hasPassword && (
             <p className="mt-1 text-xs text-secondary">🔒 Password protected</p>
           )}
-          <div className="mt-2 flex gap-2">
+          <div className="mt-3 flex gap-2">
             <button
               type="button"
               className="btn btn-secondary text-xs"
@@ -526,12 +555,16 @@ export default function OnlinePage() {
             {online.room.players.map((player) => (
               <li
                 key={player.playerId}
-                className="flex items-center justify-between rounded-[10px] bg-white/5 px-3.5 py-2.5 text-sm"
+                className="flex items-center justify-between rounded-[10px] border border-white/6 bg-white/5 px-3.5 py-2.5 text-sm"
               >
-                <span className="font-medium">
+                <span className="flex items-center gap-2 font-medium">
+                  <span
+                    className="inline-block h-2 w-2 rounded-full bg-[var(--color-success)] shadow-[0_0_8px_rgba(72,187,120,0.8)]"
+                    aria-hidden
+                  />
                   {player.displayName}
                   {player.isAi && (
-                    <span className="ml-2 rounded bg-white/10 px-1.5 py-0.5 text-[0.62rem] uppercase">
+                    <span className="ml-1 rounded bg-white/10 px-1.5 py-0.5 text-[0.62rem] uppercase">
                       Bot
                     </span>
                   )}
@@ -549,7 +582,7 @@ export default function OnlinePage() {
             }).map((_, index) => (
               <li
                 key={`open-${index}`}
-                className="rounded-[10px] border border-dashed border-white/12 px-3.5 py-2.5 text-sm text-secondary"
+                className="waiting-slot rounded-[10px] px-3.5 py-2.5 text-sm text-secondary"
               >
                 Waiting for player…
               </li>

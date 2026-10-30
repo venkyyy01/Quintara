@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Sora } from "next/font/google";
 import "./globals.css";
+import { AmbientFX } from "@/components/AmbientFX";
 import { PwaBootstrap } from "@/components/PwaBootstrap";
 import { getSiteUrl } from "@/lib/site";
 
@@ -86,8 +87,11 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${sora.variable} ${inter.variable}`}>
       <body>
-        <PwaBootstrap />
-        {children}
+        <AmbientFX />
+        <div className="app-shell">
+          <PwaBootstrap />
+          {children}
+        </div>
       </body>
     </html>
   );
