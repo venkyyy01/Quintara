@@ -1,6 +1,6 @@
 /**
- * Overlays and modals: victory (§48), pass-device handoff (§21), ambiguous
- * sequence selection (§66), reconnect status (§30) and settings (§62).
+ * Overlays and modals: victory (§48), ambiguous sequence selection (§66),
+ * reconnect status (§30) and settings (§62).
  */
 
 "use client";
@@ -262,51 +262,6 @@ function formatDuration(projected: ProjectedState): string {
   const seconds = Math.max(0, Math.round((end - start) / 1000));
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
-export function PassDeviceScreen({
-  playerName,
-  teamName,
-  onReady,
-}: {
-  playerName: string;
-  teamName: string;
-  onReady: () => void;
-}) {
-  const titleId = useId();
-  const panelRef = useDialogFocus();
-  return (
-    <div className="overlay">
-      <motion.div
-        ref={panelRef}
-        tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="panel panel-gold w-full max-w-sm p-8 text-center"
-        initial={{ opacity: 0, y: 22, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ type: "spring", stiffness: 240, damping: 22 }}
-      >
-        <div className="trophy-ring mx-auto mb-4" style={{ fontSize: "1.9rem" }}>
-          🃏
-        </div>
-        <h2 id={titleId} className="text-xl font-bold">
-          Pass device to {playerName}
-        </h2>
-        <p className="mt-2 text-sm text-secondary">
-          Playing for <strong className="text-text-primary">{teamName}</strong>
-        </p>
-        <button
-          type="button"
-          className="btn btn-primary mt-6 w-full"
-          onClick={onReady}
-        >
-          Tap when ready
-        </button>
-      </motion.div>
-    </div>
-  );
 }
 
 export function SequenceSelectionPanel({

@@ -260,8 +260,6 @@ interface LocalGameState {
   state: GameState | null;
   projected: ProjectedState | null;
   selectedCardId: string | null;
-  /** Pass-and-play privacy screen between turns (§21). */
-  awaitingHandoff: boolean;
   toasts: Toast[];
   botThinking: boolean;
   lastMoveSummary: string | null;
@@ -284,7 +282,6 @@ interface LocalGameState {
   exchangeDeadCard: (cardId: string) => void;
   selectSequences: (sequences: SequenceCandidate[]) => void;
   useDefaultSequenceSelection: () => void;
-  acknowledgeHandoff: () => void;
   dismissToast: (id: number) => void;
 }
 
@@ -314,7 +311,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
     const projected = projectStateForViewer(next, viewerId);
 
     // Drop a card selection that is no longer playable for the viewer:
-    // selections must never leak across handoffs or into finished games.
+    // selections must never leak across turns or into finished games.
     const selected = get().selectedCardId;
     const selectionStillPlayable =
       next.status === "ACTIVE" &&
@@ -329,7 +326,6 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
       ...(selected !== null && !selectionStillPlayable
         ? { selectedCardId: null }
         : {}),
-      ...(next.status !== "ACTIVE" ? { awaitingHandoff: false } : {}),
     });
 
     if (next.status === "ACTIVE") {
@@ -508,15 +504,17 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
 
     const nextActive = currentPlayerId(state);
     const mode = get().mode;
-    // §21 handoff privacy: the screen only re-arms when the seat changed.
     // Same-player sub-steps (dead-card exchange, ambiguous line selection)
-    // must not interrupt the acting player mid-turn.
+    // must not interrupt the acting player mid-turn. A seat change gets a
+    // light cue, but the next hand is shown immediately for pass-and-play.
     if (
       mode === "PASS_AND_PLAY" &&
       nextActive !== null &&
       nextActive !== previousActive
     ) {
-      set({ awaitingHandoff: true });
+      sounds.turn();
+      reactMusic("turn");
+      haptic("light");
     }
   }
 
@@ -528,7 +526,6 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
     state: null,
     projected: null,
     selectedCardId: null,
-    awaitingHandoff: false,
     toasts: [],
     botThinking: false,
     lastMoveSummary: null,
@@ -556,7 +553,6 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
         seed: seed ?? null,
         state: started,
         selectedCardId: null,
-        awaitingHandoff: mode === "PASS_AND_PLAY",
         toasts: [notice("Game started — good luck!", "success")],
         lastMoveSummary: null,
         lastPlacedCellId: null,
@@ -577,7 +573,6 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
         seed: saved.seed ?? null,
         state: saved.state,
         selectedCardId: null,
-        awaitingHandoff: saved.mode === "PASS_AND_PLAY",
         toasts: [notice("Saved game restored.", "info")],
         lastMoveSummary: null,
         lastPlacedCellId: null,
@@ -603,7 +598,6 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
         projected: null,
         seats: [],
         selectedCardId: null,
-        awaitingHandoff: false,
         botThinking: false,
         lastPlacedCellId: null,
         toasts: [],
@@ -702,13 +696,6 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
       if (!state) return;
       const sequences = resolveSequenceSelectionDefault(state);
       get().selectSequences([...sequences]);
-    },
-
-    acknowledgeHandoff: () => {
-      set({ awaitingHandoff: false });
-      sounds.turn();
-      reactMusic("turn");
-      haptic("light");
     },
 
     dismissToast: (id) => {

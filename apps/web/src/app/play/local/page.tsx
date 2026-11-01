@@ -187,10 +187,6 @@ function LocalPlay() {
   }
 
   const activeId = projected.currentTurnPlayerId;
-  const activeSeat =
-    mode === "SOLO"
-      ? game.seats.find((s) => s.id === activeId)
-      : game.seats.find((s) => s.id === activeId);
 
   return (
     <GameScreen
@@ -209,16 +205,6 @@ function LocalPlay() {
       onDismissNotice={(id) => game.dismissToast(Number(id))}
       neutralResult={mode === "PASS_AND_PLAY"}
       connectionLabel={dailyView ? `Daily Challenge · ${dailyLabel()}` : null}
-      handoff={{
-        pending: game.awaitingHandoff,
-        playerName: activeSeat?.name ?? "",
-        teamName:
-          projected.teams.find(
-            (t) =>
-              t.id === projected.players.find((p) => p.id === activeId)?.teamId,
-          )?.name ?? "",
-        onReady: () => game.acknowledgeHandoff(),
-      }}
       sequenceSelection={sequenceSelection}
       onSelectCard={(cardId) => game.selectCard(cardId)}
       onCellClick={(cellId: CellId) => game.playAt(cellId)}

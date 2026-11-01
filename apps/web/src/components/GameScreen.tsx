@@ -20,7 +20,6 @@ import { GameBoard } from "./GameBoard";
 import { PlayerHand } from "./PlayerHand";
 import { MatchInfo, PlayersPanel, TurnBanner } from "./Panels";
 import {
-  PassDeviceScreen,
   SequenceSelectionPanel,
   SettingsPanel,
   VictoryModal,
@@ -28,13 +27,6 @@ import {
 import type { GameState } from "@quintara/game-engine";
 import { useSettings } from "@/lib/settings";
 import { setMusicScene } from "@/lib/sound";
-
-export interface HandoffState {
-  pending: boolean;
-  playerName: string;
-  teamName: string;
-  onReady: () => void;
-}
 
 export interface GameNotice {
   id: string | number;
@@ -50,7 +42,6 @@ export interface GameScreenProps {
   lastPlacedCellId: CellId | null;
   lastMoveSummary: string | null;
   botThinking: boolean;
-  handoff: HandoffState;
   sequenceSelection: {
     options: readonly SequenceSelectionOption[];
     onSelect: (option: SequenceSelectionOption) => void;
@@ -83,7 +74,6 @@ export function GameScreen(props: GameScreenProps) {
     lastPlacedCellId,
     lastMoveSummary,
     botThinking,
-    handoff,
     sequenceSelection,
     connectionLabel,
     notices = [],
@@ -203,13 +193,9 @@ export function GameScreen(props: GameScreenProps) {
     >
       <div
         className="game-frame flex flex-1 flex-col"
-        inert={
-          handoff.pending || settingsOpen || projected.status === "FINISHED"
-        }
+        inert={settingsOpen || projected.status === "FINISHED"}
         aria-hidden={
-          handoff.pending || settingsOpen || projected.status === "FINISHED"
-            ? true
-            : undefined
+          settingsOpen || projected.status === "FINISHED" ? true : undefined
         }
       >
         {/* Top status bar (§35) */}
@@ -379,13 +365,6 @@ export function GameScreen(props: GameScreenProps) {
       )}
 
       {/* Overlays */}
-      {handoff.pending && projected.status === "ACTIVE" && (
-        <PassDeviceScreen
-          playerName={handoff.playerName}
-          teamName={handoff.teamName}
-          onReady={handoff.onReady}
-        />
-      )}
       {projected.status === "FINISHED" && (
         <VictoryModal
           projected={projected}

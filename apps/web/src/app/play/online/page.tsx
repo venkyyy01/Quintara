@@ -221,12 +221,6 @@ export default function OnlinePage() {
           lastPlacedCellId={online.lastPlacedCellId}
           lastMoveSummary={online.lastMoveSummary}
           botThinking={false}
-          handoff={{
-            pending: false,
-            playerName: "",
-            teamName: "",
-            onReady: () => {},
-          }}
           sequenceSelection={
             state.turnPhase === "AWAITING_SEQUENCE_SELECTION"
               ? {
