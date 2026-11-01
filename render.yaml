@@ -1,0 +1,31 @@
+# Free multiplayer backend for the public GitHub Pages demo.
+#
+# Deploy: https://render.com/deploy?repo=https://github.com/vskrch/Quintara
+# Then set the repository variable NEXT_PUBLIC_WS_URL to
+# wss://<your-service>.onrender.com/ws and re-run the Pages workflow.
+#
+# Render's free instance sleeps after inactivity. The first connection after
+# a nap can take up to a minute to wake up; subsequent play is normal.
+services:
+  - type: web
+    name: quintara-server
+    runtime: node
+    plan: free
+    region: oregon
+    autoDeploy: true
+    healthCheckPath: /api/health
+    buildCommand: npm ci --include=dev && npm run build:packages && npm run build -w @quintara/server
+    startCommand: npm run start -w @quintara/server
+    envVars:
+      - key: NODE_VERSION
+        value: 22.11.0
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: QUINTARA_AUTH_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        value: https://vskrch.github.io,http://localhost:3000
+      - key: TRUST_PROXY
+        value: "1"

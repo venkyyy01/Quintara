@@ -3,6 +3,7 @@
 **Build the line. Break the plan. Own the board.**
 
 [![CI](https://github.com/vskrch/Quintara/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/vskrch/Quintara/actions/workflows/ci.yml)
+[![Play](https://img.shields.io/badge/play-live%20demo-d7ad62?logo=googlechrome&logoColor=0d1117)](https://vskrch.github.io/Quintara/)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.11-5fa04e)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org/)
 [![Status](https://img.shields.io/badge/status-playable%20beta-d7ad62)](#project-status)
@@ -16,6 +17,33 @@ Quintara is an independent project. It is not affiliated with, endorsed by, or
 sponsored by Jax Ltd., Goliath Games, Goliath IP Stichting, or the publishers of
 the board game _Sequence_. See [Legal](#legal).
 
+## Play now
+
+<p align="center">
+  <a href="https://vskrch.github.io/Quintara/">
+    <img src="https://img.shields.io/badge/%E2%96%B6%20Play%20Quintara-free%20in%20your%20browser-d7ad62?style=for-the-badge&labelColor=0d1117" alt="Play Quintara free in your browser" height="44" />
+  </a>
+</p>
+
+**The public demo is live at [vskrch.github.io/Quintara](https://vskrch.github.io/Quintara/)**,
+hosted free on GitHub Pages. Solo vs AI, local pass-and-play, the tutorial, the
+daily challenge, stats, and the installable offline PWA all work with no account
+and no server.
+
+| Capability                  | Public demo | Full online build |
+| --------------------------- | :---------: | :---------------: |
+| Solo vs AI                  |     ✅      |        ✅         |
+| Local pass-and-play         |     ✅      |        ✅         |
+| Tutorial & daily challenge  |     ✅      |        ✅         |
+| Installable / offline PWA   |     ✅      |        ✅         |
+| Private rooms & quick match |      —      | ✅ with a server  |
+| Cost                        |     $0      | $0 on free tiers  |
+
+The demo is rebuilt by [`.github/workflows/pages.yml`](.github/workflows/pages.yml)
+on every push to `main`. Online rooms need the authoritative game server, which
+GitHub Pages cannot run — see [Online multiplayer](#online-multiplayer) for the
+free backend path.
+
 ![Quintara home screen](docs/screenshots/home.png)
 
 ## At a glance
@@ -27,10 +55,12 @@ the board game _Sequence_. See [Legal](#legal).
 | **AI**       | Easy · Medium · Hard · Expert                                           |
 | **Stack**    | TypeScript · Next.js 15 · Fastify · WebSocket · Vitest                  |
 | **Platform** | Installable PWA for desktop and mobile browsers                         |
+| **Play**     | [Live demo](https://vskrch.github.io/Quintara/) · free GitHub Pages     |
 | **License**  | Proprietary — all rights reserved ([LICENSE](LICENSE))                  |
 
 ## Contents
 
+- [Play now](#play-now)
 - [Quick start](#quick-start)
 - [Screenshots](#screenshots)
 - [How to play](#how-to-play)
@@ -41,6 +71,7 @@ the board game _Sequence_. See [Legal](#legal).
 - [Testing and quality](#testing-and-quality)
 - [Environment variables](#environment-variables)
 - [Deployment](#deployment)
+- [Online multiplayer](#online-multiplayer)
 - [Security and privacy](#security-and-privacy)
 - [Legal](#legal)
 - [Project status](#project-status)
@@ -295,12 +326,65 @@ is directly exposed.
 | `NEXT_PUBLIC_WS_URL`        | WebSocket endpoint, e.g. `wss://game.example.com/ws`                                                                                                                                                                 |
 | `NEXT_PUBLIC_SITE_URL`      | Canonical site URL used by metadata and the sitemap. Must be a domain you own in production.                                                                                                                         |
 | `NEXT_PUBLIC_CONTACT_EMAIL` | Public contact address on the privacy and terms pages. Required for production deployments. The build fails fast when a production deployment is detected (Vercel production or a non-local `NEXT_PUBLIC_SITE_URL`). |
+| `NEXT_PUBLIC_BASE_PATH`     | Subpath prefix for static hosting, e.g. `/Quintara`. Leave unset at a domain root.                                                                                                                                   |
+| `NEXT_PUBLIC_DEMO_MODE`     | Set to `1` for a frontend-only build; the online lobby explains that a game server is required.                                                                                                                      |
+| `NEXT_STATIC_EXPORT`        | Build-time flag. Set to `1` to enable `output: "export"` and trailing-slash routes for GitHub Pages or another static host.                                                                                          |
 
 Copy `.env.example` to the relevant location as a starting point.
 
 ## Deployment
 
-### Build and run
+### Public demo — GitHub Pages (free)
+
+The live demo is **<https://vskrch.github.io/Quintara/>**. It is a static export
+of `apps/web`, built by [`.github/workflows/pages.yml`](.github/workflows/pages.yml)
+on every push to `main`. There is no server, database, container, card, or paid
+plan behind it.
+
+What the workflow does:
+
+- builds the shared packages, then runs `next build` with `NEXT_STATIC_EXPORT=1`;
+- sets `NEXT_PUBLIC_BASE_PATH` from the repository name, so the same workflow
+  works for forks served at `https://<owner>.github.io/<repo>/`;
+- sets `NEXT_PUBLIC_SITE_URL` to the Pages origin for canonical URLs;
+- sets `NEXT_PUBLIC_DEMO_MODE=1` when no game server is configured, so the
+  online lobby explains the limitation instead of waiting forever;
+- publishes `apps/web/out` through GitHub's official Pages actions.
+
+To show a real contact address on the hosted privacy and terms pages, add the
+repository **Actions variable** `NEXT_PUBLIC_CONTACT_EMAIL`. Without it the
+static demo uses the public GitHub issue tracker as its contact channel.
+
+### Online multiplayer
+
+GitHub Pages is static, so private rooms and quick match need the Fastify
+WebSocket server. The Render free tier is the zero-cost path:
+[`render.yaml`](render.yaml) provisions one free web service with a generated
+`QUINTARA_AUTH_SECRET`, a health check, proxy trust, and CORS for the Pages demo.
+
+<p align="center">
+  <a href="https://render.com/deploy?repo=https://github.com/vskrch/Quintara">
+    <img src="https://render.com/images/deploy-to-render-button.svg" alt="Deploy the Quintara game server to Render for free" height="44" />
+  </a>
+</p>
+
+After the service is live:
+
+1. Copy its URL, for example `https://quintara-server.onrender.com`.
+2. In GitHub → **Settings → Secrets and variables → Actions → Variables**, add
+   `NEXT_PUBLIC_WS_URL` with the value `wss://quintara-server.onrender.com/ws`
+   and, because production builds require a monitored contact channel,
+   `NEXT_PUBLIC_CONTACT_EMAIL` with a real mailbox.
+3. Re-run **Deploy demo to GitHub Pages** from the Actions tab (or push to
+   `main`). The next build enables online play and removes the demo notice.
+
+Render's free instance sleeps after about 15 minutes of inactivity, and the
+first connection after a nap can take up to a minute to wake it. The server
+uses the in-memory store, so active rooms and history reset when it restarts.
+That is perfect for a friends-and-family beta; use a persistent `GameStore`
+before a ranked or paid launch.
+
+### Self-host the full stack
 
 ```bash
 npm ci
@@ -312,7 +396,9 @@ npm run start -w @quintara/web
 ### Hosting notes
 
 - **Web**: deploy the Next.js app to any Node host (Vercel, Fly.io, Render,
-  etc.). The service worker provides the offline shell.
+  etc.). The service worker provides the offline shell. For a static host,
+  build with `NEXT_STATIC_EXPORT=1` and configure `NEXT_PUBLIC_BASE_PATH` when
+  the app is not served from the domain root.
 - **Server**: deploy the Fastify process to a Node host (Fly.io, Railway,
   Render, AWS, GCP). Put it behind TLS and a reverse proxy that forwards
   WebSocket upgrades.

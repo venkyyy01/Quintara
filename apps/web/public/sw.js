@@ -9,16 +9,18 @@
  * - navigations: network-first with cache fallback, then /offline
  * - other same-origin GETs (RSC payloads): network-first with cache fallback
  * - API and WebSocket traffic: never cached
+ *
+ * All paths are derived from the worker's own location, so the same file
+ * works at a domain root and under a GitHub Pages project path.
  */
 
-const CACHE_VERSION = "quintara-shell-v3";
-const SHELL_ASSETS = [
-  "/",
+const BASE = new URL("./", self.location.href).pathname.replace(/\/$/, "");
+const at = (path) => `${BASE}${path}` || "/";
+
+const CACHE_VERSION = "quintara-shell-v5";
+const SHELL_ROUTES = [
+  "",
   "/offline",
-  "/manifest.webmanifest",
-  "/icon.svg",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
   "/rules",
   "/tutorial",
   "/play/local",
@@ -28,8 +30,23 @@ const SHELL_ASSETS = [
   "/privacy",
   "/terms",
 ];
+const SHELL_ASSETS = [
+  "/manifest.webmanifest",
+  "/icon.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+];
 
-const STATIC_PATH = /^\/(?:_next\/static|icons)\//;
+function shellUrls() {
+  const urls = new Set(SHELL_ASSETS.map(at));
+  for (const route of SHELL_ROUTES) {
+    const path = at(route);
+    urls.add(path || "/");
+    // Static exports use trailing slashes; server builds usually do not.
+    if (path) urls.add(`${path}/`);
+  }
+  return [...urls];
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -37,7 +54,7 @@ self.addEventListener("install", (event) => {
       const cache = await caches.open(CACHE_VERSION);
       // One missing route must not abort the whole install.
       await Promise.all(
-        SHELL_ASSETS.map(async (url) => {
+        shellUrls().map(async (url) => {
           try {
             await cache.add(url);
           } catch {
@@ -100,8 +117,9 @@ function networkFirst(request, fallbackToShell) {
       if (cached) return cached;
       if (fallbackToShell) {
         return (
-          (await caches.match("/offline")) ??
-          (await caches.match("/")) ??
+          (await caches.match(at("/offline"))) ??
+          (await caches.match(at("/offline/"))) ??
+          (await caches.match(at("/"))) ??
           Response.error()
         );
       }
@@ -121,9 +139,9 @@ self.addEventListener("fetch", (event) => {
 
   // API, auth and dev HMR traffic are never cached.
   if (
-    url.pathname.startsWith("/api/") ||
-    url.pathname.startsWith("/ws") ||
-    url.pathname.startsWith("/_next/webpack-hmr")
+    url.pathname.startsWith(at("/api/")) ||
+    url.pathname.startsWith(at("/ws")) ||
+    url.pathname.startsWith(at("/_next/webpack-hmr"))
   ) {
     return;
   }
@@ -134,9 +152,10 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (
-    STATIC_PATH.test(url.pathname) ||
-    url.pathname === "/icon.svg" ||
-    url.pathname === "/manifest.webmanifest" ||
+    url.pathname.startsWith(at("/_next/static/")) ||
+    url.pathname.startsWith(at("/icons/")) ||
+    url.pathname === at("/icon.svg") ||
+    url.pathname === at("/manifest.webmanifest") ||
     ["style", "script", "font", "image"].includes(request.destination)
   ) {
     event.respondWith(cacheFirst(request));

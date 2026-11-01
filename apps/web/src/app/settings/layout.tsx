@@ -4,7 +4,7 @@ export const metadata: Metadata = {
   title: "Settings",
   description:
     "Adjust Quintara sound, haptics, legal-move highlights, animation speed and reduced-motion preferences.",
-  alternates: { canonical: "/settings" },
+  alternates: { canonical: "settings" },
 };
 
 export default function SettingsLayout({

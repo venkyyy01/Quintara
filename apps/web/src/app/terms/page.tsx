@@ -5,7 +5,7 @@ import { getContactEmail, ISSUES_URL, SECURITY_ADVISORY_URL } from "@/lib/site";
 export const metadata: Metadata = {
   title: "Terms",
   description: "Terms of service for playing Quintara.",
-  alternates: { canonical: "/terms" },
+  alternates: { canonical: "terms" },
 };
 
 export default function TermsPage() {

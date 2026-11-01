@@ -16,6 +16,7 @@ import {
   useLocalGame,
   type LocalSeat,
 } from "@/lib/local-game";
+import { withBasePath } from "@/lib/site";
 
 const DIFFICULTIES: { id: AiDifficulty; label: string; hint: string }[] = [
   { id: "EASY", label: "Easy", hint: "Random moves with basic safety" },
@@ -26,7 +27,9 @@ const DIFFICULTIES: { id: AiDifficulty; label: string; hint: string }[] = [
 
 export default function LocalPlayPage() {
   return (
-    <Suspense fallback={<div className="p-10 text-center text-secondary">Loading…</div>}>
+    <Suspense
+      fallback={<div className="p-10 text-center text-secondary">Loading…</div>}
+    >
       <LocalPlay />
     </Suspense>
   );
@@ -77,10 +80,7 @@ function LocalPlay() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function startGame(
-    selected: "SOLO" | "PASS_AND_PLAY",
-    seed?: string,
-  ) {
+  function startGame(selected: "SOLO" | "PASS_AND_PLAY", seed?: string) {
     const seats: LocalSeat[] = [];
     if (selected === "SOLO") {
       seats.push({ id: "p-human", name: names[0] || "You", isAi: false });
@@ -108,7 +108,7 @@ function LocalPlay() {
       window.history.replaceState(
         null,
         "",
-        seed ? "/play/local?daily=1" : "/play/local",
+        withBasePath(seed ? "/play/local?daily=1" : "/play/local"),
       );
     }
   }
@@ -208,17 +208,14 @@ function LocalPlay() {
       notices={game.toasts}
       onDismissNotice={(id) => game.dismissToast(Number(id))}
       neutralResult={mode === "PASS_AND_PLAY"}
-      connectionLabel={
-        dailyView ? `Daily Challenge · ${dailyLabel()}` : null
-      }
+      connectionLabel={dailyView ? `Daily Challenge · ${dailyLabel()}` : null}
       handoff={{
         pending: game.awaitingHandoff,
         playerName: activeSeat?.name ?? "",
         teamName:
           projected.teams.find(
             (t) =>
-              t.id ===
-              projected.players.find((p) => p.id === activeId)?.teamId,
+              t.id === projected.players.find((p) => p.id === activeId)?.teamId,
           )?.name ?? "",
         onReady: () => game.acknowledgeHandoff(),
       }}
@@ -309,7 +306,10 @@ function SetupScreen(props: {
                 onClick={() => props.setDifficulty(entry.id)}
                 aria-pressed={props.difficulty === entry.id}
               >
-                <span className="mb-1.5 flex justify-center gap-0.5" aria-hidden>
+                <span
+                  className="mb-1.5 flex justify-center gap-0.5"
+                  aria-hidden
+                >
                   {Array.from({ length: 4 }).map((_, bar) => (
                     <span
                       key={bar}
@@ -355,9 +355,9 @@ function SetupScreen(props: {
             className="mt-2 rounded-[10px] border border-[rgba(215,173,98,0.35)] bg-accent-soft px-3 py-2 text-xs text-secondary"
             role="note"
           >
-            <strong className="text-text-primary">3-player note:</strong>{" "}
-            three teams share the board and games often end in a draw. 2, 4 or
-            6 players give the most decisive matches.
+            <strong className="text-text-primary">3-player note:</strong> three
+            teams share the board and games often end in a draw. 2, 4 or 6
+            players give the most decisive matches.
           </p>
         )}
       </section>

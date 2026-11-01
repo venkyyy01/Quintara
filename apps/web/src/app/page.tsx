@@ -9,7 +9,7 @@ import { createStandardBoardDefinition } from "@quintara/game-engine";
 import { HomeShowcase } from "@/components/HomeShowcase";
 
 export const metadata: Metadata = {
-  alternates: { canonical: "/" },
+  alternates: { canonical: "./" },
 };
 
 const BOARD_CELLS = createStandardBoardDefinition().cells;
@@ -86,11 +86,7 @@ export default function HomePage() {
               icon={<DiamondIcon />}
             />
             <HomeTile href="/rules" label="How to Play" icon={<BookIcon />} />
-            <HomeTile
-              href="/tutorial"
-              label="Tutorial"
-              icon={<CapIcon />}
-            />
+            <HomeTile href="/tutorial" label="Tutorial" icon={<CapIcon />} />
             <HomeTile href="/settings" label="Settings" icon={<GearIcon />} />
           </div>
 
@@ -154,7 +150,10 @@ function HomeTile({
   icon: React.ReactNode;
 }) {
   return (
-    <Link href={href} className="panel home-tile flex flex-col items-center gap-2 px-3 py-4">
+    <Link
+      href={href}
+      className="panel home-tile flex flex-col items-center gap-2 px-3 py-4"
+    >
       <span className="tile-icon text-accent" aria-hidden>
         {icon}
       </span>
@@ -172,7 +171,11 @@ function DiamondIcon() {
         strokeWidth="1.7"
         strokeLinejoin="round"
       />
-      <path d="M12 7.5l4.5 4.5-4.5 4.5L7.5 12 12 7.5z" fill="currentColor" opacity=".35" />
+      <path
+        d="M12 7.5l4.5 4.5-4.5 4.5L7.5 12 12 7.5z"
+        fill="currentColor"
+        opacity=".35"
+      />
     </svg>
   );
 }
@@ -186,8 +189,17 @@ function BookIcon() {
         strokeWidth="1.7"
         strokeLinejoin="round"
       />
-      <path d="M4 18.5A2.5 2.5 0 016.5 16H20" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M8 7h8M8 10.5h6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path
+        d="M4 18.5A2.5 2.5 0 016.5 16H20"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+      <path
+        d="M8 7h8M8 10.5h6"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }

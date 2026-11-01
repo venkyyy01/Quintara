@@ -1,0 +1,73 @@
+name: Deploy demo to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build static demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build workspace packages
+        run: npm run build:packages
+
+      - name: Configure deployment
+        env:
+          WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL }}
+          CONTACT_EMAIL: ${{ vars.NEXT_PUBLIC_CONTACT_EMAIL }}
+        run: |
+          echo "NEXT_PUBLIC_SITE_URL=https://${GITHUB_REPOSITORY_OWNER}.github.io" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_BASE_PATH=/${GITHUB_REPOSITORY#*/}" >> "$GITHUB_ENV"
+          echo "NEXT_STATIC_EXPORT=1" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_CONTACT_EMAIL=${CONTACT_EMAIL:-}" >> "$GITHUB_ENV"
+          if [ -n "${WS_URL:-}" ]; then
+            echo "NEXT_PUBLIC_WS_URL=${WS_URL}" >> "$GITHUB_ENV"
+            echo "Online play enabled: ${WS_URL}"
+          else
+            echo "NEXT_PUBLIC_DEMO_MODE=1" >> "$GITHUB_ENV"
+            echo "No NEXT_PUBLIC_WS_URL repository variable: building the frontend-only demo."
+          fi
+
+      - name: Build static site
+        run: npm run build -w @quintara/web
+
+      - name: Disable Jekyll processing
+        run: touch apps/web/out/.nojekyll
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/out
+
+  deploy:
+    name: Deploy
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

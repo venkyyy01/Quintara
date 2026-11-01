@@ -1,8 +1,10 @@
 import type { MetadataRoute } from "next";
-import { getSiteUrl } from "@/lib/site";
+import { BASE_PATH, getSiteUrl } from "@/lib/site";
+
+export const dynamic = "force-static";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = getSiteUrl();
+  const baseUrl = `${getSiteUrl()}${BASE_PATH}`;
   const now = new Date();
   const routes = [
     "",

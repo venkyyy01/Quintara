@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { useSettings } from "@/lib/settings";
 import { startMusic } from "@/lib/sound";
+import { withBasePath } from "@/lib/site";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -46,7 +47,7 @@ export function PwaBootstrap() {
       );
       const register = () => {
         navigator.serviceWorker
-          .register("/sw.js")
+          .register(withBasePath("/sw.js"))
           .then((registration) => {
             const watch = () => {
               if (registration.waiting && navigator.serviceWorker.controller) {
@@ -142,11 +143,9 @@ export function PwaBootstrap() {
             type="button"
             className="btn btn-primary px-3 py-1.5 text-xs"
             onClick={() => {
-              navigator.serviceWorker
-                .getRegistration()
-                .then((registration) => {
-                  registration?.waiting?.postMessage({ type: "SKIP_WAITING" });
-                });
+              navigator.serviceWorker.getRegistration().then((registration) => {
+                registration?.waiting?.postMessage({ type: "SKIP_WAITING" });
+              });
             }}
           >
             Refresh

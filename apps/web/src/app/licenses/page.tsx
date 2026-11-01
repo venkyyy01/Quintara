@@ -1,11 +1,12 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { withBasePath } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Licenses",
   description:
     "Third-party notices and license texts for the software and assets used by Quintara.",
-  alternates: { canonical: "/licenses" },
+  alternates: { canonical: "licenses" },
 };
 
 const licenseTexts = [
@@ -100,7 +101,7 @@ export default function LicensesPage() {
               >
                 <a
                   className="font-medium text-accent underline-offset-4 hover:underline"
-                  href={license.href}
+                  href={withBasePath(license.href)}
                 >
                   {license.name}
                 </a>

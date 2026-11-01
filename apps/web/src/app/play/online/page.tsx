@@ -15,10 +15,8 @@ import {
 } from "@quintara/game-engine";
 import { GameScreen } from "@/components/GameScreen";
 import { ReconnectOverlay } from "@/components/Modals";
-import {
-  useOnlineGame,
-  type OnlineGameState,
-} from "@/lib/online-game";
+import { useOnlineGame, type OnlineGameState } from "@/lib/online-game";
+import { IS_STATIC_DEMO, REPOSITORY_URL, withBasePath } from "@/lib/site";
 
 export default function OnlinePage() {
   const online = useOnlineGame();
@@ -39,6 +37,7 @@ export default function OnlinePage() {
   const pendingInvite = useRef<string | null>(null);
 
   useEffect(() => {
+    if (IS_STATIC_DEMO) return;
     online.connect();
     // Invite deep links (§30): /play/online?room=CODE joins automatically
     // once the socket is authenticated. Keep the code in the join field so a
@@ -146,6 +145,64 @@ export default function OnlinePage() {
     online.room?.hostPlayerId === online.identity.playerId;
   const connected = online.connection === "connected";
 
+  // GitHub Pages build: online rooms need the authoritative WebSocket server.
+  // Keep the page useful instead of showing a permanent "Connecting…" state.
+  if (IS_STATIC_DEMO) {
+    return (
+      <main className="relative mx-auto w-full max-w-2xl px-6 pb-16 pt-[calc(var(--safe-top)+2rem)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <span className="hero-eyebrow">
+              <span className="dot" aria-hidden />
+              Public demo
+            </span>
+            <h1 className="mt-3 text-3xl font-bold sm:text-4xl">Play Online</h1>
+          </div>
+          <Link href="/" className="btn btn-ghost shrink-0">
+            ← Home
+          </Link>
+        </div>
+
+        <section className="panel panel-raised mt-6 p-6">
+          <h2 className="text-lg font-semibold">
+            Multiplayer needs the game server
+          </h2>
+          <p className="mt-2 text-sm leading-relaxed text-secondary">
+            This site is the free, frontend-only demo. Solo, pass-and-play, the
+            tutorial, and the daily challenge run entirely in your browser and
+            work right now. Online rooms use an authoritative WebSocket server,
+            which is not attached to this build.
+          </p>
+          <p className="mt-3 text-sm leading-relaxed text-secondary">
+            Want to host the full game? The repository includes a free Render
+            blueprint for the server and step-by-step instructions.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Link href="/play/local?quick=1" className="btn btn-primary">
+              ⚡ Play vs AI
+            </Link>
+            <Link href="/tutorial" className="btn btn-secondary">
+              Learn the game
+            </Link>
+            <a
+              className="btn btn-ghost"
+              href={`${REPOSITORY_URL}#online-multiplayer`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Deploy online play ↗
+            </a>
+          </div>
+        </section>
+
+        <p className="mt-4 text-xs leading-relaxed text-secondary">
+          Everything else — four AI levels, local multiplayer, stats, and
+          offline install — is fully playable on this page.
+        </p>
+      </main>
+    );
+  }
+
   // Playing phase — server-driven game screen.
   if (online.phase === "PLAYING" && online.projected) {
     const state = online.projected;
@@ -164,7 +221,12 @@ export default function OnlinePage() {
           lastPlacedCellId={online.lastPlacedCellId}
           lastMoveSummary={online.lastMoveSummary}
           botThinking={false}
-          handoff={{ pending: false, playerName: "", teamName: "", onReady: () => {} }}
+          handoff={{
+            pending: false,
+            playerName: "",
+            teamName: "",
+            onReady: () => {},
+          }}
           sequenceSelection={
             state.turnPhase === "AWAITING_SEQUENCE_SELECTION"
               ? {
@@ -209,8 +271,7 @@ export default function OnlinePage() {
             if (!legal) return;
             const match = legal.mainActions.find(
               (a) =>
-                a.targetCellId === cellId &&
-                a.cardId === online.selectedCardId,
+                a.targetCellId === cellId && a.cardId === online.selectedCardId,
             );
             if (
               !match ||
@@ -518,7 +579,7 @@ export default function OnlinePage() {
               className="btn btn-secondary text-xs"
               onClick={async () => {
                 const code = online.room?.roomCode ?? "";
-                const invite = `${window.location.origin}/play/online?room=${code}`;
+                const invite = `${window.location.origin}${withBasePath("/play/online")}?room=${code}`;
                 try {
                   if (!navigator.clipboard?.writeText) {
                     throw new Error("Clipboard unavailable");
@@ -610,7 +671,8 @@ function StartGameControl({
   const isHost =
     online.identity !== null &&
     online.room?.players.some(
-      (player) => player.isHost && player.playerId === online.identity?.playerId,
+      (player) =>
+        player.isHost && player.playerId === online.identity?.playerId,
     ) === true;
   const full =
     online.room !== null &&

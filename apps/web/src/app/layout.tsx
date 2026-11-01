@@ -3,7 +3,7 @@ import { Inter, Sora } from "next/font/google";
 import "./globals.css";
 import { AmbientFX } from "@/components/AmbientFX";
 import { PwaBootstrap } from "@/components/PwaBootstrap";
-import { getSiteUrl } from "@/lib/site";
+import { getSiteBase, withBasePath } from "@/lib/site";
 
 const sora = Sora({
   subsets: ["latin"],
@@ -18,7 +18,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(getSiteUrl()),
+  metadataBase: new URL(getSiteBase()),
   title: {
     default: "QUINTARA — Build the line. Break the plan. Own the board.",
     template: "%s · QUINTARA",
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   description:
     "Quintara is a premium browser-based strategy board game: play solo vs AI, local pass-and-play, or online with friends.",
   applicationName: "QUINTARA",
-  manifest: "/manifest.webmanifest",
+  manifest: withBasePath("/manifest.webmanifest"),
   keywords: [
     "Quintara",
     "strategy board game",
@@ -41,7 +41,7 @@ export const metadata: Metadata = {
     title: "QUINTARA — Build the line. Break the plan. Own the board.",
     description:
       "A premium browser strategy game of cards and position. Play solo, pass-and-play, or online with friends.",
-    url: "/",
+    url: "./",
     images: [
       {
         url: "/icons/icon-512.png",
@@ -66,11 +66,19 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: withBasePath("/icon.svg"), type: "image/svg+xml" },
+      {
+        url: withBasePath("/icons/icon-192.png"),
+        sizes: "192x192",
+        type: "image/png",
+      },
+      {
+        url: withBasePath("/icons/icon-512.png"),
+        sizes: "512x512",
+        type: "image/png",
+      },
     ],
-    apple: [{ url: "/icons/icon-192.png", sizes: "192x192" }],
+    apple: [{ url: withBasePath("/icons/icon-192.png"), sizes: "192x192" }],
   },
 };
 

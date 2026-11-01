@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   title: "How to Play",
   description:
     "Learn Quintara: cards, wild corners, one-eyed and two-eyed jacks, dead cards, protected lines and team play.",
-  alternates: { canonical: "/rules" },
+  alternates: { canonical: "rules" },
 };
 
 const SECTIONS: { title: string; body: ReactNode }[] = [
@@ -20,8 +20,8 @@ const SECTIONS: { title: string; body: ReactNode }[] = [
     body: (
       <p>
         Complete unbroken lines of <strong>five</strong> of your team&apos;s
-        markers — horizontally, vertically or diagonally. In a two-side game
-        you need <strong>2 lines</strong>; with three sides, the first to{" "}
+        markers — horizontally, vertically or diagonally. In a two-side game you
+        need <strong>2 lines</strong>; with three sides, the first to{" "}
         <strong>1 line</strong> wins.
       </p>
     ),
@@ -57,7 +57,10 @@ const SECTIONS: { title: string; body: ReactNode }[] = [
           <strong>8♥</strong> board spaces — if they are open. Selecting a card
           highlights its legal spaces; everything else dims.
         </p>
-        <ExampleRow codes={["8♥", "8♥"]} note="Both copies open → either works." />
+        <ExampleRow
+          codes={["8♥", "8♥"]}
+          note="Both copies open → either works."
+        />
       </div>
     ),
   },
@@ -122,7 +125,10 @@ const SECTIONS: { title: string; body: ReactNode }[] = [
           one centre counts as two lines — often a winning move. A run of nine
           can score twice (1–5 and 5–9), but a run of six scores only once.
         </p>
-        <ExampleRow codes={["●", "●", "●", "●", "●"]} note="Five in a row = one line." />
+        <ExampleRow
+          codes={["●", "●", "●", "●", "●"]}
+          note="Five in a row = one line."
+        />
       </div>
     ),
   },
@@ -130,8 +136,8 @@ const SECTIONS: { title: string; body: ReactNode }[] = [
     title: "Team Play",
     body: (
       <p>
-        Teammates share markers and lines but never see each other&apos;s
-        hands. Turn order alternates between teams, so no two teammates play
+        Teammates share markers and lines but never see each other&apos;s hands.
+        Turn order alternates between teams, so no two teammates play
         back-to-back.
       </p>
     ),
@@ -140,9 +146,9 @@ const SECTIONS: { title: string; body: ReactNode }[] = [
     title: "Winning",
     body: (
       <p>
-        The moment your team reaches the required number of lines, the game
-        ends — no last-turn replies. If nobody can make progress for a full
-        round, the game ends in a rare stalemate draw.
+        The moment your team reaches the required number of lines, the game ends
+        — no last-turn replies. If nobody can make progress for a full round,
+        the game ends in a rare stalemate draw.
       </p>
     ),
   },
@@ -158,8 +164,7 @@ export default function RulesPage() {
         </Link>
       </div>
       <p className="mt-2 text-secondary">
-        Quintara takes about a minute to learn — this page is the full
-        rulebook.
+        Quintara takes about a minute to learn — this page is the full rulebook.
       </p>
 
       <div className="mt-8 flex flex-col gap-4">
@@ -168,7 +173,10 @@ export default function RulesPage() {
             <h2 className="flex items-center gap-2.5 text-lg font-semibold">
               <span
                 className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold"
-                style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}
+                style={{
+                  background: "var(--color-accent-soft)",
+                  color: "var(--color-accent)",
+                }}
               >
                 {index + 1}
               </span>
@@ -193,13 +201,7 @@ export default function RulesPage() {
   );
 }
 
-function ExampleRow({
-  codes,
-  note,
-}: {
-  codes: string[];
-  note: string;
-}) {
+function ExampleRow({ codes, note }: { codes: string[]; note: string }) {
   return (
     <div className="flex items-center gap-2.5">
       <div className="flex gap-1.5">

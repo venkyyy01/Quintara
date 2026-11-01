@@ -4,7 +4,7 @@ export const metadata: Metadata = {
   title: "Stats & History",
   description:
     "Your local Quintara match history, win rate and streaks. Everything stays on this device.",
-  alternates: { canonical: "/stats" },
+  alternates: { canonical: "stats" },
 };
 
 export default function StatsLayout({

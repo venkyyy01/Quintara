@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: "Privacy",
   description:
     "How Quintara handles game data, local storage and online rooms.",
-  alternates: { canonical: "/privacy" },
+  alternates: { canonical: "privacy" },
 };
 
 export default function PrivacyPage() {
