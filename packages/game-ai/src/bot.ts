@@ -218,10 +218,9 @@ function expertChoice(
   let bestScore = -Infinity;
 
   for (const action of actions) {
-    // Average the heuristic prior and the abstract rollouts together —
-    // dividing the accumulated sum by 24 alone would dilute the heuristic
-    // 24-fold and let noise pick among near-ties.
-    let total = scoreMainAction({ state, playerId }, action) * 0.6;
+    // Average the heuristic prior and the abstract rollouts together. Scale
+    // the heuristic by 24 before dividing so it is not diluted 24-fold.
+    let total = scoreMainAction({ state, playerId }, action) * 0.6 * 24;
     for (let rollout = 0; rollout < 24; rollout++) {
       total += rolloutScore(state, myTeam, action, context);
     }
@@ -251,11 +250,14 @@ function rolloutScore(
     new Array<string | null>(width).fill(null),
   );
 
-  // Seed the grid from the public board.
+  // Seed the grid from the public board. Non-card cells (corners/holes) are
+  // marked blocked so abstract rollouts never place on them.
   for (const cell of state.boardDefinition.cells) {
     if (cell.type === "CARD") {
       grid[cell.row]![cell.column] =
         state.board.cells[cell.id]?.occupantTeamId ?? null;
+    } else {
+      grid[cell.row]![cell.column] = "__blocked__";
     }
   }
 
