@@ -3,6 +3,7 @@
 **Build the line. Break the plan. Own the board.**
 
 [![CI](https://github.com/vskrch/Quintara/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/vskrch/Quintara/actions/workflows/ci.yml)
+[![Deploy demo](https://github.com/vskrch/Quintara/actions/workflows/pages.yml/badge.svg?branch=main)](https://github.com/vskrch/Quintara/actions/workflows/pages.yml)
 [![Play](https://img.shields.io/badge/play-live%20demo-d7ad62?logo=googlechrome&logoColor=0d1117)](https://vskrch.github.io/Quintara/)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.11-5fa04e)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org/)
