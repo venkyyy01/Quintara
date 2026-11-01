@@ -30,7 +30,7 @@ import {
   type AiDifficulty,
   type BotContext,
 } from "@quintara/game-ai";
-import { haptic, sounds } from "./sound";
+import { haptic, reactMusic, sounds } from "./sound";
 
 export type LocalMode = "PASS_AND_PLAY" | "SOLO";
 
@@ -440,6 +440,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
       const cell = command.targetCellId.replace("r", "R").replace("c", "C");
       summaries.push(`${card?.code ?? "Card"} → ${cell}`);
       sounds.place();
+      reactMusic("place");
       haptic("light");
     } else if (command.type === "PLAY_WILD_JACK") {
       const cell = command.targetCellId.replace("r", "R").replace("c", "C");
@@ -561,6 +562,8 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
         lastPlacedCellId: null,
       });
       refresh(started);
+      sounds.deal();
+      haptic("medium");
     },
 
     hydrate: () => {
@@ -610,6 +613,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
     selectCard: (cardId) => {
       set({ selectedCardId: get().selectedCardId === cardId ? null : cardId });
       sounds.select();
+      reactMusic("select");
       haptic("selection");
     },
 
@@ -682,6 +686,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
           : currentPlayerId(state);
       if (!viewerId) return;
       sounds.sequence();
+      reactMusic("sequence");
       haptic("success");
       dispatch({
         type: "SELECT_SEQUENCE_SET",
@@ -702,6 +707,7 @@ export const useLocalGame = create<LocalGameState>((set, get) => {
     acknowledgeHandoff: () => {
       set({ awaitingHandoff: false });
       sounds.turn();
+      reactMusic("turn");
       haptic("light");
     },
 

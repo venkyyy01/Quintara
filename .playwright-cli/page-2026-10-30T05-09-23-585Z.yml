@@ -1,0 +1,53 @@
+- main [ref=e3]:
+  - button "← Back" [ref=e4] [cursor=pointer]
+  - generic [ref=e5]: Local table
+  - heading "New Game" [level=1] [ref=e7]
+  - paragraph [ref=e8]: Choose how to play. All local modes work offline.
+  - generic [ref=e9]:
+    - button "🤖 Play AI Face computer opponents ✓" [pressed] [ref=e10]:
+      - generic [ref=e11]: 🤖
+      - paragraph [ref=e12]: Play AI
+      - paragraph [ref=e13]: Face computer opponents
+      - text: ✓
+    - button "👥 Pass & Play Share one device" [ref=e14]:
+      - generic [ref=e15]: 👥
+      - paragraph [ref=e16]: Pass & Play
+      - paragraph [ref=e17]: Share one device
+  - generic [ref=e18]:
+    - heading "Difficulty" [level=2] [ref=e19]
+    - generic [ref=e20]:
+      - button [ref=e21]:
+        - paragraph [ref=e27]: Easy
+        - paragraph [ref=e28]: Random moves with basic safety
+      - button [pressed] [ref=e29]:
+        - paragraph [ref=e35]: Medium
+        - paragraph [ref=e36]: Tactical heuristics
+        - text: ✓
+      - button [ref=e37]:
+        - paragraph [ref=e43]: Hard
+        - paragraph [ref=e44]: Threat modelling & Jack discipline
+      - button [ref=e45]:
+        - paragraph [ref=e51]: Expert
+        - paragraph [ref=e52]: Monte-Carlo style search
+  - generic [ref=e53]:
+    - heading "Players" [level=2] [ref=e54]
+    - generic [ref=e55]:
+      - button "2" [ref=e56] [cursor=pointer]
+      - button "3" [ref=e57] [cursor=pointer]
+      - button "4" [ref=e58] [cursor=pointer]
+      - button "6" [ref=e59] [cursor=pointer]
+      - button "8" [ref=e60] [cursor=pointer]
+      - button "9" [ref=e61] [cursor=pointer]
+      - button "10" [ref=e62] [cursor=pointer]
+      - button "12" [ref=e63] [cursor=pointer]
+    - paragraph [ref=e64]: "Standard counts only (§4): 2, 3, 4, 6, 8, 9, 10 or 12 players."
+  - generic [ref=e65]:
+    - heading "Names" [level=2] [ref=e66]
+    - generic [ref=e67]:
+      - textbox "Name for seat 1" [ref=e68]:
+        - /placeholder: Your name
+        - text: You
+      - textbox "Name for seat 2" [ref=e69]:
+        - /placeholder: AI 1
+        - text: Rival
+  - button "Start Game" [ref=e70] [cursor=pointer]

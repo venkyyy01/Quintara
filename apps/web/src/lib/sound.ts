@@ -33,7 +33,7 @@ export type HapticKind =
 const DEFAULTS: SoundSettings = {
   master: 0.6,
   effects: 0.8,
-  music: 0.25,
+  music: 0.42,
   haptics: true,
 };
 
@@ -91,19 +91,24 @@ function ensureGraph(): AudioGraph | null {
   music.gain.value = settings.music;
   music.connect(master);
 
-  // Convolution reverb gives every cue a believable room tail.
+  // Convolution reverb gives every cue a believable room tail. A gentle
+  // low-pass on the return keeps the tail warm instead of glassy.
   const reverb = audio.createConvolver();
-  reverb.buffer = createReverbImpulse(audio, 2.6, 2.3);
+  reverb.buffer = createReverbImpulse(audio, 2.8, 2.2);
+  const reverbTone = audio.createBiquadFilter();
+  reverbTone.type = "lowpass";
+  reverbTone.frequency.value = 5400;
+  reverbTone.Q.value = 0.35;
   const reverbWet = audio.createGain();
-  reverbWet.gain.value = 0.34;
-  reverb.connect(reverbWet).connect(master);
+  reverbWet.gain.value = 0.28;
+  reverb.connect(reverbTone).connect(reverbWet).connect(master);
 
   const reverbSend = audio.createGain();
   reverbSend.gain.value = 1;
   reverbSend.connect(reverb);
 
   const effectsSend = audio.createGain();
-  effectsSend.gain.value = 0.18;
+  effectsSend.gain.value = 0.3;
   effects.connect(effectsSend).connect(reverbSend);
 
   const musicSend = audio.createGain();
@@ -332,20 +337,23 @@ export const sounds = {
     if (!audio || !audible()) return;
     const start = audio.ctx.currentTime;
     const pitch = 1 + (Math.random() - 0.5) * 0.07;
+    // Paper friction as the card leaves the deck.
     noise({
       start,
-      duration: 0.05,
-      gain: 0.022,
+      duration: 0.07,
+      gain: 0.038,
       filterType: "highpass",
-      frequency: 2200,
+      frequency: 2400,
       q: 0.5,
+      sweepTo: 3600,
     });
+    // The wooden card edge clicking free.
     tone({
       frequency: 760 * pitch,
       type: "triangle",
       start,
-      duration: 0.1,
-      gain: 0.05,
+      duration: 0.12,
+      gain: 0.075,
       slideTo: 1160 * pitch,
       attack: 0.003,
       pan: randomPan(0.08),
@@ -354,11 +362,20 @@ export const sounds = {
       frequency: 1520 * pitch,
       type: "sine",
       start: start + 0.005,
-      duration: 0.07,
-      gain: 0.016,
+      duration: 0.09,
+      gain: 0.026,
       slideTo: 1740 * pitch,
       attack: 0.002,
       pan: randomPan(0.12),
+    });
+    // A short body under the tick so it is heard, not just clicked.
+    tone({
+      frequency: 320,
+      type: "sine",
+      start: start + 0.004,
+      duration: 0.06,
+      gain: 0.05,
+      attack: 0.002,
     });
   },
 
@@ -368,28 +385,31 @@ export const sounds = {
     if (!audio || !audible()) return;
     const start = audio.ctx.currentTime;
     const pitch = 1 + (Math.random() - 0.5) * 0.05;
+    // Sub thump: the weight of the marker landing.
     tone({
       frequency: 168 * pitch,
       type: "sine",
       start,
-      duration: 0.28,
-      gain: 0.26,
+      duration: 0.3,
+      gain: 0.5,
       slideTo: 68,
       attack: 0.004,
     });
+    // Body: the impact knock.
     tone({
       frequency: 82,
       type: "sine",
       start: start + 0.005,
-      duration: 0.34,
-      gain: 0.16,
+      duration: 0.36,
+      gain: 0.3,
       slideTo: 52,
       attack: 0.006,
     });
+    // Keen edge: the transient click of the marker rim.
     noise({
       start,
-      duration: 0.11,
-      gain: 0.055,
+      duration: 0.14,
+      gain: 0.1,
       filterType: "bandpass",
       frequency: 520,
       q: 1.1,
@@ -399,11 +419,30 @@ export const sounds = {
       frequency: 1240 * pitch,
       type: "triangle",
       start,
-      duration: 0.045,
-      gain: 0.032,
+      duration: 0.05,
+      gain: 0.055,
       slideTo: 900,
       attack: 0.001,
       pan: randomPan(0.1),
+    });
+    // Table resonance: the board ringing back under the impact.
+    tone({
+      frequency: 190,
+      type: "triangle",
+      start: start + 0.01,
+      duration: 0.42,
+      gain: 0.055,
+      attack: 0.006,
+      filter: { type: "lowpass", frequency: 900, q: 0.6 },
+    });
+    tone({
+      frequency: 410,
+      type: "sine",
+      start: start + 0.012,
+      duration: 0.3,
+      gain: 0.028,
+      attack: 0.004,
+      pan: randomPan(0.3),
     });
   },
 
@@ -416,8 +455,8 @@ export const sounds = {
       frequency: 430,
       type: "sawtooth",
       start,
-      duration: 0.26,
-      gain: 0.075,
+      duration: 0.3,
+      gain: 0.12,
       slideTo: 118,
       attack: 0.006,
       filter: {
@@ -427,14 +466,25 @@ export const sounds = {
         sweepTo: 460,
       },
     });
+    // The marker lifting free off the board.
     noise({
       start,
-      duration: 0.24,
-      gain: 0.04,
+      duration: 0.28,
+      gain: 0.07,
       filterType: "bandpass",
       frequency: 1100,
       q: 0.7,
       sweepTo: 260,
+    });
+    // A soft low body so the peel has weight, not just a hiss.
+    tone({
+      frequency: 210,
+      type: "sine",
+      start: start + 0.01,
+      duration: 0.24,
+      gain: 0.06,
+      slideTo: 140,
+      attack: 0.005,
     });
   },
 
@@ -472,40 +522,64 @@ export const sounds = {
     const notes = [659.25, 783.99, 1046.5, 1318.51];
     notes.forEach((frequency, index) => {
       const at = start + index * 0.09;
+      // Bell body.
       tone({
         frequency,
         type: "sine",
         start: at,
-        duration: 0.95,
-        gain: 0.075,
+        duration: 1.15,
+        gain: 0.115,
         attack: 0.006,
         pan: (index - 1.5) * 0.16,
       });
+      // Bell overtone.
       tone({
         frequency: frequency * 2,
         type: "triangle",
         start: at,
-        duration: 0.5,
-        gain: 0.016,
+        duration: 0.6,
+        gain: 0.032,
         attack: 0.003,
         pan: (index - 1.5) * 0.22,
       });
+      // Glassy strike transient so each note reads as struck, not faded in.
+      tone({
+        frequency: frequency * 3,
+        type: "sine",
+        start: at,
+        duration: 0.12,
+        gain: 0.026,
+        attack: 0.001,
+        pan: (index - 1.5) * 0.2,
+      });
     });
+    // Warm low swell underneath — the "line locks in" body.
     tone({
       frequency: 164.81,
       type: "sine",
       start,
-      duration: 1.5,
-      gain: 0.07,
+      duration: 1.7,
+      gain: 0.1,
       attack: 0.02,
     });
+    tone({
+      frequency: 246.94,
+      type: "triangle",
+      start,
+      duration: 1.2,
+      gain: 0.035,
+      attack: 0.03,
+      pan: -0.2,
+    });
+    // Air shimmer sweeping up with the rising notes.
     noise({
       start,
-      duration: 0.85,
-      gain: 0.024,
+      duration: 1,
+      gain: 0.045,
       filterType: "highpass",
       frequency: 3200,
       q: 0.4,
+      sweepTo: 6200,
     });
   },
 
@@ -519,11 +593,57 @@ export const sounds = {
         frequency,
         type: "triangle",
         start: start + index * 0.12,
-        duration: 0.36,
-        gain: 0.045,
+        duration: 0.42,
+        gain: 0.072,
         attack: 0.01,
         pan: index === 0 ? -0.12 : 0.12,
       });
+      tone({
+        frequency: frequency * 2,
+        type: "sine",
+        start: start + index * 0.12 + 0.005,
+        duration: 0.22,
+        gain: 0.022,
+        attack: 0.002,
+        pan: index === 0 ? -0.12 : 0.12,
+      });
+    });
+  },
+
+  /** Fresh deal: a soft riffle of cards and a warm rising swell. */
+  deal(): void {
+    const audio = ensureGraph();
+    if (!audio || !audible()) return;
+    const start = audio.ctx.currentTime;
+    for (let index = 0; index < 7; index += 1) {
+      noise({
+        start: start + index * 0.045,
+        duration: 0.07,
+        gain: 0.02 + index * 0.001,
+        filterType: "bandpass",
+        frequency: 1500 + index * 210,
+        q: 1.1,
+        pan: (index / 6 - 0.5) * 0.5,
+      });
+    }
+    [220, 329.63, 440, 659.25].forEach((frequency, index) => {
+      tone({
+        frequency,
+        type: "triangle",
+        start: start + 0.1 + index * 0.07,
+        duration: 0.9,
+        gain: 0.03,
+        attack: 0.02,
+        pan: (index - 1.5) * 0.16,
+      });
+    });
+    noise({
+      start: start + 0.08,
+      duration: 0.7,
+      gain: 0.018,
+      filterType: "highpass",
+      frequency: 3600,
+      q: 0.4,
     });
   },
 
@@ -539,8 +659,8 @@ export const sounds = {
         frequency,
         type: "triangle",
         start: at,
-        duration: 1.3,
-        gain: 0.07,
+        duration: 1.4,
+        gain: 0.11,
         attack: 0.008,
         pan: (index - 2) * 0.1,
       });
@@ -548,29 +668,56 @@ export const sounds = {
         frequency: frequency * 2,
         type: "sine",
         start: at,
-        duration: 0.7,
-        gain: 0.018,
+        duration: 0.75,
+        gain: 0.034,
         attack: 0.004,
       });
+      // Strike transient on each fanfare note.
+      tone({
+        frequency: frequency * 3,
+        type: "sine",
+        start: at,
+        duration: 0.14,
+        gain: 0.022,
+        attack: 0.001,
+        pan: (index - 2) * 0.08,
+      });
     });
+    // Brass-like swell, opening over its 2.6s so the chord blooms.
     [130.81, 196, 261.63, 329.63].forEach((frequency) => {
       tone({
         frequency,
         type: "sawtooth",
         start,
-        duration: 2.6,
-        gain: 0.022,
+        duration: 2.8,
+        gain: 0.042,
         attack: 0.15,
-        filter: { type: "lowpass", frequency: 1300, q: 0.6 },
+        filter: {
+          type: "lowpass",
+          frequency: 800,
+          q: 0.6,
+          sweepTo: 2600,
+        },
       });
     });
+    // Sub drop under the swell for weight.
+    tone({
+      frequency: 65.41,
+      type: "sine",
+      start: start + 0.05,
+      duration: 1.8,
+      gain: 0.13,
+      attack: 0.03,
+    });
+    // Rising air sweep as the melody climbs.
     noise({
       start,
-      duration: 1.6,
-      gain: 0.022,
+      duration: 1.8,
+      gain: 0.04,
       filterType: "highpass",
-      frequency: 2800,
+      frequency: 2000,
       q: 0.4,
+      sweepTo: 7000,
     });
   },
 
@@ -583,8 +730,8 @@ export const sounds = {
       frequency: 150,
       type: "square",
       start,
-      duration: 0.18,
-      gain: 0.035,
+      duration: 0.2,
+      gain: 0.055,
       slideTo: 100,
       attack: 0.004,
       filter: { type: "lowpass", frequency: 720, q: 0.8 },
@@ -593,8 +740,8 @@ export const sounds = {
       frequency: 104,
       type: "sawtooth",
       start: start + 0.02,
-      duration: 0.2,
-      gain: 0.025,
+      duration: 0.22,
+      gain: 0.04,
       slideTo: 82,
       attack: 0.004,
       filter: { type: "lowpass", frequency: 500, q: 0.7 },
@@ -609,8 +756,8 @@ export const sounds = {
     for (let index = 0; index < 3; index += 1) {
       noise({
         start: start + index * 0.06,
-        duration: 0.08,
-        gain: 0.028,
+        duration: 0.1,
+        gain: 0.048,
         filterType: "bandpass",
         frequency: 1800 + index * 500,
         q: 0.9,
@@ -634,23 +781,35 @@ export const sounds = {
     if (!audio || !audible()) return;
     const start = audio.ctx.currentTime;
     [880, 1174.66, 1567.98, 2093].forEach((frequency, index) => {
+      // Bell body.
       tone({
         frequency,
         type: "sine",
         start: start + index * 0.045,
-        duration: 0.5,
-        gain: 0.032,
+        duration: 0.6,
+        gain: 0.06,
         attack: 0.003,
         pan: (index - 1.5) * 0.18,
+      });
+      // Overtone for the magical shimmer.
+      tone({
+        frequency: frequency * 1.5,
+        type: "sine",
+        start: start + index * 0.045 + 0.01,
+        duration: 0.4,
+        gain: 0.02,
+        attack: 0.002,
+        pan: (index - 1.5) * 0.2,
       });
     });
     noise({
       start,
-      duration: 0.5,
-      gain: 0.022,
+      duration: 0.6,
+      gain: 0.05,
       filterType: "highpass",
       frequency: 4200,
       q: 0.5,
+      sweepTo: 6800,
     });
   },
 
@@ -694,61 +853,226 @@ export const sounds = {
 };
 
 /* ==========================================================================
-   Adaptive ambient music
+   Adaptive music — ambient / cinematic score
+   ==========================================================================
+
+   A single long-form arc in A minor, ~2m40s per pass, written as eight
+   two-bar chords. Every scene (lobby / table / final stretch) uses the same
+   progression so a scene change never sounds like a key change — it only
+   reveals more of the arrangement: more voices, faster pulse, brighter
+   filters, more percussion.
+
+   Six musical layers, each with its own bus so the mix can be rebalanced
+   per scene with a crossfade:
+
+     pad      — slow detuned pad cluster, the harmonic bed
+     arp      — plucked arpeggio through a tempo-synced dotted-eighth echo
+     bass     — sub sine + soft body, felt more than heard
+     perc     — soft kick and brushed shaker, real rhythm without drums
+     bell     — chord-tone bell motif, the melodic hook
+     texture  — air / noise wash that slowly opens and closes
+
+   Two additional musical devices make the loop feel alive rather than
+   looped: a slow randomised "shimmer answer" every other chord, and a
+   sub-octave drop under the fermata that ends each 8-chord pass.
    ========================================================================== */
 
 interface Chord {
-  readonly notes: readonly number[];
+  /** Bass root, Hz. */
   readonly bass: number;
-  readonly duration: number;
+  /** Pad voicing, Hz — four to five notes spread across two octaves. */
+  readonly pad: readonly number[];
+  /** Chord tones visited by the arpeggio and bell motif, Hz. */
+  readonly arp: readonly number[];
 }
 
-interface SceneSettings {
-  readonly arpCount: number;
-  readonly sparkleChance: number;
-  readonly padGain: number;
+interface MotifNote {
+  /** Beat offset inside the two-bar chord, 0..8. */
+  readonly at: number;
+  /** Index into the chord's arp tone list. */
+  readonly tone: number;
+}
+
+interface SceneConfig {
+  readonly tempo: number;
+  readonly chords: readonly Chord[];
+  /** 16-step on/off gate for the arpeggio. */
+  readonly arpPattern: readonly number[];
+  /** Order in which chord tones are visited. */
+  readonly arpSequence: readonly number[];
+  readonly arpOctave: number;
+  readonly motif: readonly MotifNote[];
+  /** Beat offsets for the soft kick. */
+  readonly kick: readonly number[];
+  /** Beat offsets for the brushed shaker. */
+  readonly shaker: readonly number[];
+  readonly padLevel: number;
+  readonly arpLevel: number;
+  readonly bassLevel: number;
+  readonly percLevel: number;
+  readonly bellLevel: number;
+  readonly textureLevel: number;
+  readonly delayLevel: number;
+  /** Filter-brightness multiplier — the climax scene is audibly brighter. */
   readonly brightness: number;
-  readonly pulse: boolean;
+  /** How much of the airy high shimmer is audible. */
+  readonly shimmerLevel: number;
 }
 
-const PROGRESSIONS: Record<MusicScene, readonly Chord[]> = {
-  // Warm, open and curious — the lobby / home mood.
-  menu: [
-    { notes: [220, 261.63, 329.63, 392, 493.88], bass: 110, duration: 9 },
-    { notes: [174.61, 220, 261.63, 329.63, 392], bass: 87.31, duration: 9 },
-    { notes: [130.81, 196, 261.63, 329.63, 392], bass: 65.41, duration: 9 },
-    { notes: [196, 246.94, 293.66, 392, 440], bass: 98, duration: 9 },
-  ],
-  // Lower, more focused, with a subtle pulse — the table mood.
-  game: [
-    { notes: [146.83, 174.61, 220, 261.63, 349.23], bass: 73.42, duration: 7.5 },
-    { notes: [116.54, 146.83, 174.61, 233.08, 293.66], bass: 58.27, duration: 7.5 },
-    { notes: [130.81, 174.61, 220, 261.63, 329.63], bass: 65.41, duration: 7.5 },
-    { notes: [110, 164.81, 220, 261.63, 329.63], bass: 55, duration: 7.5 },
-  ],
-  // Brighter and more urgent — the final turns and victory.
-  climax: [
-    { notes: [130.81, 164.81, 196, 261.63, 329.63], bass: 65.41, duration: 6 },
-    { notes: [146.83, 174.61, 220, 293.66, 349.23], bass: 73.42, duration: 6 },
-    { notes: [116.54, 146.83, 196, 233.08, 293.66], bass: 58.27, duration: 6 },
-    { notes: [98, 146.83, 196, 246.94, 293.66], bass: 49, duration: 6 },
-  ],
+// Am — F — C — G — Dm — Am — F — E: a long, open loop of A minor that ends
+// on the V so the next pass feels pulled back home rather than cut off.
+const SCORE: readonly Chord[] = [
+  {
+    bass: 110,
+    pad: [220, 261.63, 329.63, 493.88, 658.41],
+    arp: [220, 261.63, 329.63, 493.88, 659.25, 880],
+  },
+  {
+    bass: 87.31,
+    pad: [174.61, 220, 261.63, 349.23, 523.25],
+    arp: [174.61, 220, 261.63, 349.23, 440, 698.46],
+  },
+  {
+    bass: 130.81,
+    pad: [261.63, 329.63, 392, 523.25, 659.25],
+    arp: [261.63, 329.63, 392, 493.88, 523.25, 783.99],
+  },
+  {
+    bass: 98,
+    pad: [196, 246.94, 293.66, 392, 587.33],
+    arp: [196, 246.94, 293.66, 392, 493.88, 739.99],
+  },
+  {
+    bass: 73.42,
+    pad: [146.83, 174.61, 220, 293.66, 440],
+    arp: [146.83, 174.61, 220, 261.63, 293.66, 587.33],
+  },
+  {
+    bass: 110,
+    pad: [220, 261.63, 329.63, 493.88, 658.41],
+    arp: [220, 261.63, 329.63, 392, 440, 523.25, 659.25],
+  },
+  {
+    bass: 87.31,
+    pad: [174.61, 220, 261.63, 329.63, 523.25],
+    arp: [174.61, 220, 261.63, 349.23, 440, 698.46],
+  },
+  {
+    bass: 82.41,
+    pad: [164.81, 207.65, 246.94, 329.63, 493.88],
+    arp: [164.81, 207.65, 246.94, 329.63, 415.3, 493.88],
+  },
+];
+
+const SCENE_CONFIG: Record<MusicScene, SceneConfig> = {
+  // The lobby: slowest, no percussion, widest reverb, the full harmonic bed
+  // barely moving. Spacious and curious.
+  menu: {
+    tempo: 62,
+    chords: SCORE,
+    arpPattern: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+    arpSequence: [0, 2, 4, 1, 3, 5, 2],
+    arpOctave: 2,
+    motif: [
+      { at: 1, tone: 4 },
+      { at: 3, tone: 2 },
+      { at: 5.5, tone: 3 },
+      { at: 7, tone: 5 },
+    ],
+    kick: [],
+    shaker: [],
+    padLevel: 1,
+    arpLevel: 0.42,
+    bassLevel: 0.5,
+    percLevel: 0,
+    bellLevel: 0.75,
+    textureLevel: 0.8,
+    delayLevel: 0.2,
+    brightness: 0.82,
+    shimmerLevel: 0.45,
+  },
+  // The table: a steady pulse arrives, the arp works harder, the bass gets a
+  // body. Focused, forward-leaning, still calm.
+  game: {
+    tempo: 74,
+    chords: SCORE,
+    arpPattern: [1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1],
+    arpSequence: [0, 1, 2, 3, 4, 5, 4, 3, 2, 1],
+    arpOctave: 2,
+    motif: [
+      { at: 0.5, tone: 3 },
+      { at: 2, tone: 2 },
+      { at: 3.5, tone: 1 },
+      { at: 5, tone: 4 },
+      { at: 6.5, tone: 0 },
+    ],
+    kick: [0, 2.5, 4, 6.5],
+    shaker: [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5],
+    padLevel: 0.92,
+    arpLevel: 0.95,
+    bassLevel: 0.85,
+    percLevel: 0.5,
+    bellLevel: 0.62,
+    textureLevel: 0.9,
+    delayLevel: 0.24,
+    brightness: 1,
+    shimmerLevel: 0.6,
+  },
+  // One sequence from winning: fastest, densest kick, brighter filters, the
+  // motif opens up into a real lead line.
+  climax: {
+    tempo: 92,
+    chords: SCORE,
+    arpPattern: [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1],
+    arpSequence: [0, 1, 2, 3, 4, 5, 4, 3, 2, 1],
+    arpOctave: 2,
+    motif: [
+      { at: 0.5, tone: 4 },
+      { at: 1.5, tone: 3 },
+      { at: 2.5, tone: 2 },
+      { at: 3.5, tone: 5 },
+      { at: 4.5, tone: 3 },
+      { at: 6, tone: 4 },
+    ],
+    kick: [0, 2, 4, 6],
+    shaker: [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5],
+    padLevel: 1,
+    arpLevel: 1.15,
+    bassLevel: 1,
+    percLevel: 0.9,
+    bellLevel: 0.9,
+    textureLevel: 1,
+    delayLevel: 0.26,
+    brightness: 1.28,
+    shimmerLevel: 0.85,
+  },
 };
 
-const SCENE_SETTINGS: Record<MusicScene, SceneSettings> = {
-  menu: { arpCount: 2, sparkleChance: 0.35, padGain: 0.02, brightness: 1, pulse: false },
-  game: { arpCount: 3, sparkleChance: 0.5, padGain: 0.024, brightness: 1.15, pulse: true },
-  climax: { arpCount: 4, sparkleChance: 0.7, padGain: 0.028, brightness: 1.35, pulse: true },
-};
+/** Gameplay events the score answers, so the music feels like it follows the
+ *  table instead of looping beside it. */
+export type MusicReaction = "select" | "place" | "sequence" | "turn";
 
+/**
+ * Schedules and performs the score. Nothing is pre-rendered: every voice is
+ * synthesised a moment before it is heard (120ms lookahead, 1.6s horizon), so
+ * scene changes can be crossfaded mid-performance.
+ */
 class MusicEngine {
   private readonly output: GainNode;
+  private readonly shaper: WaveShaperNode;
+  private readonly delay: DelayNode;
   private readonly delaySend: GainNode;
+  private readonly buses: Record<
+    "pad" | "arp" | "bass" | "perc" | "bell" | "texture",
+    GainNode
+  >;
   private timer: number | null = null;
   private nextAt: number;
   private step = 0;
   private scene: MusicScene;
   private stopped = false;
+  /** Chord tones of the chord currently sounding, for reactive stingers. */
+  private live: readonly number[] = [];
 
   constructor(
     private readonly audio: AudioContext,
@@ -758,36 +1082,60 @@ class MusicEngine {
     this.scene = scene;
     this.output = audio.createGain();
     this.output.gain.value = 0;
-    this.output.connect(destination);
 
-    // Tempo-synced echo for the plucked arpeggios.
-    const delay = audio.createDelay(1.5);
-    delay.delayTime.value = 0.42;
+    // Gentle saturation warms the pad cluster and glues the layers without
+    // ever sounding distorted.
+    this.shaper = audio.createWaveShaper();
+    this.shaper.curve = makeSoftCurve(1.6);
+    const shaperTone = audio.createBiquadFilter();
+    shaperTone.type = "lowpass";
+    shaperTone.frequency.value = 9000;
+    this.output.connect(this.shaper).connect(shaperTone).connect(destination);
+
+    // Tempo-synced dotted-eighth echo, retuned on every scene change so the
+    // plucks and the bells always sit in the groove.
+    this.delay = audio.createDelay(2);
     const feedback = audio.createGain();
-    feedback.gain.value = 0.26;
+    feedback.gain.value = 0.29;
     const damp = audio.createBiquadFilter();
     damp.type = "lowpass";
-    damp.frequency.value = 2300;
-    delay.connect(damp).connect(feedback).connect(delay);
-    delay.connect(this.output);
+    damp.frequency.value = 2400;
+    this.delay.connect(damp).connect(feedback).connect(this.delay);
+    this.delay.connect(this.output);
 
     this.delaySend = audio.createGain();
-    this.delaySend.gain.value = 0.16;
-    this.delaySend.connect(delay);
+    this.delaySend.gain.value = 0.2;
+    this.delaySend.connect(this.delay);
 
+    this.buses = {
+      pad: audio.createGain(),
+      arp: audio.createGain(),
+      bass: audio.createGain(),
+      perc: audio.createGain(),
+      bell: audio.createGain(),
+      texture: audio.createGain(),
+    };
+    for (const bus of Object.values(this.buses)) bus.connect(this.output);
+
+    this.applyMix(true);
     this.nextAt = audio.currentTime + 0.25;
   }
 
   start(): void {
     const now = this.audio.currentTime;
     this.output.gain.setValueAtTime(0, now);
-    this.output.gain.linearRampToValueAtTime(1, now + 3);
-    this.timer = window.setInterval(this.tick, 250);
+    this.output.gain.linearRampToValueAtTime(1, now + 4);
+    this.timer = window.setInterval(this.tick, 120);
     this.tick();
   }
 
   setScene(scene: MusicScene): void {
+    if (scene === this.scene) return;
     this.scene = scene;
+    // The current chord is already scheduled; start the new arrangement at
+    // the next chord boundary so the crossfade lands on a musical seam.
+    this.step = 0;
+    this.applyMix(false);
   }
 
   stop(): void {
@@ -799,126 +1147,355 @@ class MusicEngine {
     }
     const now = this.audio.currentTime;
     this.output.gain.cancelScheduledValues(now);
-    this.output.gain.setTargetAtTime(0, now, 0.22);
-    window.setTimeout(() => this.output.disconnect(), 1600);
+    this.output.gain.setTargetAtTime(0, now, 0.25);
+    window.setTimeout(() => this.output.disconnect(), 2000);
+  }
+
+  /**
+   * Answer a gameplay event. These are deliberately small — a musical nod,
+   * never a stinger that fights the move it is describing.
+   */
+  react(event: MusicReaction): void {
+    if (this.stopped || !this.live.length) return;
+    const at = this.audio.currentTime + 0.01;
+    const tones = this.live;
+
+    if (event === "select") {
+      // A single high breath against the current chord, placed random-panned
+      // off to one side so it never sits on top of the action.
+      const note = tones[Math.floor(Math.random() * tones.length)] ?? tones[0]!;
+      this.bell(note * 4, at, 0.5, 0.3, (Math.random() * 2 - 1) * 0.8);
+      return;
+    }
+
+    if (event === "place") {
+      // A short ascending ripple inside the chord — confirmation that reads
+      // as music, not as a UI blip.
+      this.bell(tones[2] ?? tones[0]!, at, 0.75, 0.25, -0.25);
+      this.bell(tones[3] ?? tones[0]!, at + 0.06, 0.6, 0.22, 0.28);
+      return;
+    }
+
+    if (event === "turn") {
+      // Two soft notes marking the hand-off.
+      this.bell(tones[1] ?? tones[0]!, at, 0.55, 0.2, -0.1);
+      this.bell(tones[4] ?? tones[0]!, at + 0.14, 0.45, 0.18, 0.12);
+      return;
+    }
+
+    // sequence: the biggest answer — a rising five-note ripple with a long
+    // tail through the echo, so a completed line lands with weight.
+    tones.slice(0, 5).forEach((note, index) => {
+      this.bell(note * 2, at + index * 0.075, 1.15, 0.6, (index - 2) * 0.14);
+    });
   }
 
   private readonly tick = (): void => {
     if (this.stopped) return;
-    const horizon = this.audio.currentTime + 1.2;
+    const horizon = this.audio.currentTime + 1.6;
     let guard = 0;
-    while (this.nextAt < horizon && guard < 8) {
-      const chord = this.chordFor(this.step);
-      this.scheduleChord(chord, this.step, this.nextAt);
-      this.nextAt += chord.duration;
+    while (this.nextAt < horizon && guard < 12) {
+      const config = SCENE_CONFIG[this.scene];
+      const chord = config.chords[this.step % config.chords.length]!;
+      this.scheduleChord(config, chord, this.step, this.nextAt);
+      this.nextAt += this.chordDuration(config);
       this.step += 1;
       guard += 1;
     }
   };
 
-  private chordFor(step: number): Chord {
-    const progression = PROGRESSIONS[this.scene];
-    return progression[step % progression.length] ?? progression[0]!;
+  private chordDuration(config: SceneConfig): number {
+    return (60 / config.tempo) * 8;
   }
 
-  private scheduleChord(chord: Chord, step: number, at: number): void {
-    const scene = SCENE_SETTINGS[this.scene];
-    const duration = chord.duration;
+  /** Crossfade the six layer buses and retune the echo for the new tempo. */
+  private applyMix(immediate: boolean): void {
+    const config = SCENE_CONFIG[this.scene];
+    const now = this.audio.currentTime;
+    const time = immediate ? 0.01 : 0.8;
+    const set = (node: GainNode, value: number) => {
+      if (immediate) node.gain.setValueAtTime(value, now);
+      else node.gain.setTargetAtTime(value, now, time);
+    };
+    set(this.buses.pad, config.padLevel);
+    set(this.buses.arp, config.arpLevel);
+    set(this.buses.bass, config.bassLevel);
+    set(this.buses.perc, config.percLevel);
+    set(this.buses.bell, config.bellLevel);
+    set(this.buses.texture, config.textureLevel);
+    set(this.delaySend, config.delayLevel);
+    this.delay.delayTime.setTargetAtTime(
+      (60 / config.tempo) * 0.75,
+      now,
+      immediate ? 0.01 : 0.8,
+    );
+  }
 
-    chord.notes.forEach((note, index) => {
-      this.pad(note, at, duration, index, scene);
+  private scheduleChord(
+    config: SceneConfig,
+    chord: Chord,
+    step: number,
+    at: number,
+  ): void {
+    const beat = 60 / config.tempo;
+    const duration = beat * 8;
+    // Remember the sounding tones so reactive stingers play in key.
+    this.live = chord.arp;
+
+    chord.pad.forEach((note, index) => {
+      this.pad(note, at, duration, index, config);
     });
     this.bass(chord.bass, at, duration);
-    this.texture(at, duration, scene);
+    this.shimmer(at, duration, config);
+    this.texture(at, duration, config);
 
-    for (let index = 0; index < scene.arpCount; index += 1) {
-      const note =
-        chord.notes[(step + index * 2) % chord.notes.length] ?? chord.bass;
-      const offset = (index / scene.arpCount) * duration + 0.4;
-      this.pluck(note * 2, at + offset, scene);
+    for (let index = 0; index < config.arpPattern.length; index += 1) {
+      if (!config.arpPattern[index]) continue;
+      const toneIndex =
+        config.arpSequence[index % config.arpSequence.length] ?? 0;
+      const note = chord.arp[toneIndex % chord.arp.length] ?? chord.bass;
+      const offset = (index / config.arpPattern.length) * duration;
+      this.pluck(
+        note * config.arpOctave,
+        at + offset + (Math.random() - 0.5) * 0.012,
+        config,
+      );
     }
 
-    if (Math.random() < scene.sparkleChance) {
-      const note = chord.notes[(step + 3) % chord.notes.length] ?? chord.bass;
-      this.sparkle(note * 4, at + duration * 0.55);
+    for (const motif of config.motif) {
+      const note = chord.arp[motif.tone % chord.arp.length] ?? chord.bass;
+      this.bell(note * 2, at + motif.at * beat);
     }
 
-    if (scene.pulse) {
-      this.pulse(chord.bass * 2, at);
+    for (const offset of config.kick) this.kick(at + offset * beat);
+    for (const offset of config.shaker) this.shaker(at + offset * beat);
+
+    // A quiet high answer every other chord keeps the loop from feeling
+    // identical on every pass.
+    if (step % 2 === 1) {
+      const echo = chord.arp[(step + 2) % chord.arp.length] ?? chord.bass;
+      this.bell(echo * 4, at + duration * 0.75, 0.55);
+    }
+
+    // The step that closes an 8-chord pass is the V chord: a sub-octave drop
+    // far below the ear gives the loop its sense of arc and return.
+    if (step % config.chords.length === config.chords.length - 1) {
+      this.drop(chord.bass * 0.5, at + duration * 0.5, duration * 0.5);
     }
   }
 
+  /** The pad: four detuned voices and a sine octave through a slow filter. */
   private pad(
     frequency: number,
     at: number,
     duration: number,
     index: number,
-    scene: SceneSettings,
+    config: SceneConfig,
   ): void {
     const audio = this.audio;
-    const envelope = audio.createGain();
     const filter = audio.createBiquadFilter();
     filter.type = "lowpass";
-    filter.Q.value = 0.55;
-    const base = 420 + index * 70;
-    filter.frequency.setValueAtTime(base * scene.brightness, at);
+    filter.Q.value = 0.6;
+    const base = 260 + index * 80;
+    filter.frequency.setValueAtTime(base * config.brightness, at);
     filter.frequency.linearRampToValueAtTime(
-      (base + 340) * scene.brightness,
-      at + duration * 0.45,
+      (base + 520) * config.brightness,
+      at + duration * 0.38,
     );
     filter.frequency.linearRampToValueAtTime(
-      (base + 120) * scene.brightness,
+      (base + 240) * config.brightness,
       at + duration,
     );
 
-    const peak = scene.padGain * (index === 0 ? 1.3 : 1);
+    const envelope = audio.createGain();
+    const peak = 0.03 * (index === 0 ? 1.2 : 1);
     envelope.gain.setValueAtTime(0.0001, at);
-    envelope.gain.linearRampToValueAtTime(peak, at + 2.1);
-    envelope.gain.setValueAtTime(peak, at + Math.max(2.2, duration - 2.2));
-    envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+    envelope.gain.linearRampToValueAtTime(
+      peak,
+      at + Math.min(2.8, duration * 0.34),
+    );
+    envelope.gain.setValueAtTime(peak, at + duration * 0.72);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration + 0.35);
 
     const fundamental = audio.createOscillator();
     fundamental.type = "triangle";
     fundamental.frequency.value = frequency;
-    fundamental.detune.value = -5 + index;
+    fundamental.detune.value = -7 + index * 2;
+
+    const saw = audio.createOscillator();
+    saw.type = "sawtooth";
+    saw.frequency.value = frequency;
+    saw.detune.value = 7 - index * 2;
+    const sawGain = audio.createGain();
+    sawGain.gain.value = 0.14;
 
     const octave = audio.createOscillator();
     octave.type = "sine";
     octave.frequency.value = frequency * 2;
-    octave.detune.value = 4 - index;
+    octave.detune.value = 3;
+    const octaveGain = audio.createGain();
+    octaveGain.gain.value = 0.2;
 
     fundamental.connect(filter);
-    octave.connect(filter);
-    filter.connect(envelope).connect(this.output);
+    saw.connect(sawGain).connect(filter);
+    octave.connect(octaveGain).connect(filter);
 
-    fundamental.start(at);
-    octave.start(at);
-    fundamental.stop(at + duration + 0.1);
-    octave.stop(at + duration + 0.1);
+    const panner = audio.createStereoPanner();
+    panner.pan.value = (index - 1.5) * 0.26;
+    filter.connect(envelope).connect(panner).connect(this.buses.pad);
+
+    for (const oscillator of [fundamental, saw, octave]) {
+      oscillator.start(at);
+      oscillator.stop(at + duration + 0.5);
+    }
   }
 
+  /** Sub sine plus a soft triangle body — felt more than heard. */
   private bass(frequency: number, at: number, duration: number): void {
     const audio = this.audio;
-    const oscillator = audio.createOscillator();
-    oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(frequency, at);
+    const envelope = audio.createGain();
+    envelope.gain.setValueAtTime(0.0001, at);
+    envelope.gain.linearRampToValueAtTime(0.11, at + 0.16);
+    envelope.gain.setTargetAtTime(0.055, at + 0.2, 0.5);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration * 0.95);
 
     const filter = audio.createBiquadFilter();
     filter.type = "lowpass";
-    filter.frequency.value = 220;
-    filter.Q.value = 0.5;
+    filter.frequency.setValueAtTime(240, at);
+    filter.frequency.exponentialRampToValueAtTime(130, at + duration * 0.8);
+    filter.Q.value = 0.7;
 
-    const envelope = audio.createGain();
-    envelope.gain.setValueAtTime(0.0001, at);
-    envelope.gain.linearRampToValueAtTime(0.085, at + 0.12);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration * 0.9);
+    const sub = audio.createOscillator();
+    sub.type = "sine";
+    sub.frequency.value = frequency;
 
-    oscillator.connect(filter).connect(envelope).connect(this.output);
-    oscillator.start(at);
-    oscillator.stop(at + duration);
+    const body = audio.createOscillator();
+    body.type = "triangle";
+    body.frequency.value = frequency * 2;
+    const bodyGain = audio.createGain();
+    bodyGain.gain.value = 0.16;
+
+    sub.connect(filter);
+    body.connect(bodyGain).connect(filter);
+    filter.connect(envelope).connect(this.buses.bass);
+
+    sub.start(at);
+    body.start(at);
+    sub.stop(at + duration);
+    body.stop(at + duration);
   }
 
-  private texture(at: number, duration: number, scene: SceneSettings): void {
+  /** Plucked arpeggio voice, half of it feeding the tempo-synced echo. */
+  private pluck(frequency: number, at: number, config: SceneConfig): void {
+    const audio = this.audio;
+    const oscillator = audio.createOscillator();
+    oscillator.type = "triangle";
+    oscillator.frequency.value = frequency;
+
+    const overtone = audio.createOscillator();
+    overtone.type = "sine";
+    overtone.frequency.value = frequency * 2;
+    const overtoneGain = audio.createGain();
+    overtoneGain.gain.value = 0.18;
+
+    const filter = audio.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(3200 * config.brightness, at);
+    filter.frequency.exponentialRampToValueAtTime(900, at + 0.45);
+    filter.Q.value = 0.9;
+
+    const envelope = audio.createGain();
+    const peak = 0.06 * (0.75 + Math.random() * 0.25);
+    envelope.gain.setValueAtTime(0.0001, at);
+    envelope.gain.exponentialRampToValueAtTime(peak, at + 0.006);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, at + 0.7);
+
+    const panner = audio.createStereoPanner();
+    panner.pan.value = (Math.random() * 2 - 1) * 0.42;
+
+    oscillator.connect(filter);
+    overtone.connect(overtoneGain).connect(filter);
+    filter.connect(envelope).connect(panner);
+    panner.connect(this.buses.arp);
+    panner.connect(this.delaySend);
+
+    oscillator.start(at);
+    overtone.start(at);
+    oscillator.stop(at + 0.75);
+    overtone.stop(at + 0.75);
+  }
+
+  /** Chord-tone bell: the melodic hook of the score. */
+  private bell(
+    frequency: number,
+    at: number,
+    gainScale = 1,
+    durationScale = 1,
+    pan?: number,
+  ): void {
+    const audio = this.audio;
+    const envelope = audio.createGain();
+    const peak = 0.045 * gainScale;
+    envelope.gain.setValueAtTime(0.0001, at);
+    envelope.gain.linearRampToValueAtTime(peak, at + 0.02);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, at + 2.2 * durationScale);
+
+    const fundamental = audio.createOscillator();
+    fundamental.type = "sine";
+    fundamental.frequency.value = frequency;
+
+    const shimmer = audio.createOscillator();
+    shimmer.type = "sine";
+    shimmer.frequency.value = frequency * 2.01;
+    const shimmerGain = audio.createGain();
+    shimmerGain.gain.value = 0.22;
+
+    let tail: AudioNode = envelope;
+    if (pan !== undefined) {
+      const panner = audio.createStereoPanner();
+      panner.pan.value = Math.max(-1, Math.min(1, pan));
+      envelope.connect(panner);
+      tail = panner;
+    }
+    fundamental.connect(envelope);
+    shimmer.connect(shimmerGain).connect(envelope);
+    tail.connect(this.buses.bell);
+    tail.connect(this.delaySend);
+
+    fundamental.start(at);
+    shimmer.start(at);
+    fundamental.stop(at + 2.3 * durationScale);
+    shimmer.stop(at + 2.3 * durationScale);
+  }
+
+  /** High airy shimmer: two sines far above the chord, slowly fading. */
+  private shimmer(at: number, duration: number, config: SceneConfig): void {
+    const audio = this.audio;
+    for (const ratio of [4, 6]) {
+      const oscillator = audio.createOscillator();
+      oscillator.type = "sine";
+      oscillator.frequency.value = 1046.5 * ratio;
+      oscillator.detune.value = (Math.random() * 2 - 1) * 8;
+
+      const envelope = audio.createGain();
+      const peak =
+        0.004 * config.shimmerLevel * (0.6 + Math.random() * 0.6);
+      envelope.gain.setValueAtTime(0.0001, at);
+      envelope.gain.linearRampToValueAtTime(peak, at + duration * 0.5);
+      envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+
+      const panner = audio.createStereoPanner();
+      panner.pan.value = (Math.random() * 2 - 1) * 0.7;
+
+      oscillator.connect(envelope).connect(panner);
+      panner.connect(this.buses.texture);
+      oscillator.start(at);
+      oscillator.stop(at + duration + 0.1);
+    }
+  }
+
+  /** Air wash: band-passed noise that slowly opens across the chord. */
+  private texture(at: number, duration: number, config: SceneConfig): void {
     const audio = this.audio;
     const source = audio.createBufferSource();
     source.buffer = getNoiseBuffer(audio);
@@ -926,83 +1503,114 @@ class MusicEngine {
 
     const filter = audio.createBiquadFilter();
     filter.type = "bandpass";
-    filter.frequency.setValueAtTime(620, at);
+    filter.frequency.setValueAtTime(520, at);
     filter.frequency.linearRampToValueAtTime(
-      1450 * scene.brightness,
-      at + duration * 0.6,
+      1500 * config.brightness,
+      at + duration * 0.55,
     );
-    filter.Q.value = 0.35;
+    filter.Q.value = 0.4;
 
     const envelope = audio.createGain();
     envelope.gain.setValueAtTime(0.0001, at);
-    envelope.gain.linearRampToValueAtTime(0.0065, at + duration * 0.35);
+    envelope.gain.linearRampToValueAtTime(0.009, at + duration * 0.4);
     envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration);
 
-    source.connect(filter).connect(envelope).connect(this.output);
+    source.connect(filter).connect(envelope).connect(this.buses.texture);
     source.start(at);
     source.stop(at + duration + 0.05);
   }
 
-  private pluck(frequency: number, at: number, scene: SceneSettings): void {
-    const audio = this.audio;
-    const oscillator = audio.createOscillator();
-    oscillator.type = "triangle";
-    oscillator.frequency.value = frequency;
-
-    const filter = audio.createBiquadFilter();
-    filter.type = "lowpass";
-    filter.frequency.setValueAtTime(2600 * scene.brightness, at);
-    filter.frequency.exponentialRampToValueAtTime(700, at + 0.5);
-    filter.Q.value = 0.8;
-
-    const envelope = audio.createGain();
-    envelope.gain.setValueAtTime(0.0001, at);
-    envelope.gain.exponentialRampToValueAtTime(0.038, at + 0.006);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, at + 0.65);
-
-    const panner = audio.createStereoPanner();
-    panner.pan.value = (Math.random() * 2 - 1) * 0.42;
-
-    oscillator.connect(filter).connect(envelope).connect(panner);
-    panner.connect(this.output);
-    panner.connect(this.delaySend);
-    oscillator.start(at);
-    oscillator.stop(at + 0.7);
-  }
-
-  private sparkle(frequency: number, at: number): void {
-    const audio = this.audio;
-    const oscillator = audio.createOscillator();
-    oscillator.type = "sine";
-    oscillator.frequency.value = frequency;
-    const envelope = audio.createGain();
-    envelope.gain.setValueAtTime(0.0001, at);
-    envelope.gain.linearRampToValueAtTime(0.012, at + 0.4);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, at + 2.2);
-    oscillator.connect(envelope).connect(this.output);
-    oscillator.start(at);
-    oscillator.stop(at + 2.3);
-  }
-
-  private pulse(frequency: number, at: number): void {
+  /** Sub-octave drop that closes an 8-chord pass — the sense of arc. */
+  private drop(frequency: number, at: number, duration: number): void {
     const audio = this.audio;
     const oscillator = audio.createOscillator();
     oscillator.type = "sine";
     oscillator.frequency.setValueAtTime(frequency, at);
-    oscillator.frequency.exponentialRampToValueAtTime(frequency * 0.6, at + 0.2);
+
     const envelope = audio.createGain();
     envelope.gain.setValueAtTime(0.0001, at);
-    envelope.gain.exponentialRampToValueAtTime(0.03, at + 0.01);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, at + 0.24);
-    oscillator.connect(envelope).connect(this.output);
+    envelope.gain.linearRampToValueAtTime(0.12, at + 0.25);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+
+    const filter = audio.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 140;
+    filter.Q.value = 1.4;
+
+    oscillator.connect(filter).connect(envelope).connect(this.buses.bass);
     oscillator.start(at);
-    oscillator.stop(at + 0.26);
+    oscillator.stop(at + duration + 0.1);
   }
+
+  /** Soft kick: a low sine that drops in pitch. */
+  private kick(at: number): void {
+    const audio = this.audio;
+    const oscillator = audio.createOscillator();
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(115, at);
+    oscillator.frequency.exponentialRampToValueAtTime(44, at + 0.16);
+
+    const envelope = audio.createGain();
+    envelope.gain.setValueAtTime(0.0001, at);
+    envelope.gain.exponentialRampToValueAtTime(0.09, at + 0.008);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, at + 0.22);
+
+    oscillator.connect(envelope).connect(this.buses.perc);
+    oscillator.start(at);
+    oscillator.stop(at + 0.25);
+  }
+
+  /** Brushed shaker: high-passed noise, randomly panned. */
+  private shaker(at: number): void {
+    const audio = this.audio;
+    const source = audio.createBufferSource();
+    source.buffer = getNoiseBuffer(audio);
+    source.loop = true;
+
+    const filter = audio.createBiquadFilter();
+    filter.type = "highpass";
+    filter.frequency.value = 5200;
+    filter.Q.value = 0.6;
+
+    const envelope = audio.createGain();
+    envelope.gain.setValueAtTime(0.0001, at);
+    envelope.gain.exponentialRampToValueAtTime(0.014, at + 0.006);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, at + 0.055);
+
+    const panner = audio.createStereoPanner();
+    panner.pan.value = (Math.random() * 2 - 1) * 0.4;
+
+    source
+      .connect(filter)
+      .connect(envelope)
+      .connect(panner)
+      .connect(this.buses.perc);
+    source.start(at);
+    source.stop(at + 0.07);
+  }
+}
+
+/** Soft, warm saturation curve for the music bus. */
+function makeSoftCurve(amount: number): Float32Array<ArrayBuffer> {
+  const samples = 1024;
+  // Allocate through an explicit ArrayBuffer so the curve is typed
+  // Float32Array<ArrayBuffer> (what WaveShaperNode.curve wants).
+  const curve = new Float32Array(new ArrayBuffer(samples * 4));
+  for (let index = 0; index < samples; index += 1) {
+    const x = (index / (samples - 1)) * 2 - 1;
+    curve[index] = Math.tanh(x * amount) / Math.tanh(amount);
+  }
+  return curve;
 }
 
 export function setMusicScene(scene: MusicScene): void {
   musicScene = scene;
   musicEngine?.setScene(scene);
+}
+
+/** Answer a gameplay event with a musical sting (§62). */
+export function reactMusic(event: MusicReaction): void {
+  musicEngine?.react(event);
 }
 
 export function startMusic(): void {

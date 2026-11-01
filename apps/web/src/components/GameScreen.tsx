@@ -99,12 +99,18 @@ export function GameScreen(props: GameScreenProps) {
   const showLegalMoves = useSettings((s) => s.showLegalMoves);
   const animationSpeed = useSettings((s) => s.animationSpeed);
 
-  // The adaptive score follows the table: focused while playing, brighter at
-  // the finish, and back to the warm lobby bed once the table is left.
+  // The adaptive score follows the table: focused while playing, lifting into
+  // the climax arrangement when someone is one sequence from winning, and back
+  // to the warm lobby bed once the table is left.
+  const oneAway = projected.teams.some(
+    (team) => team.sequenceCount === projected.requiredSequences - 1,
+  );
+  const musicScene =
+    projected.status === "FINISHED" || oneAway ? "climax" : "game";
   useEffect(() => {
-    setMusicScene(projected.status === "FINISHED" ? "climax" : "game");
+    setMusicScene(musicScene);
     return () => setMusicScene("menu");
-  }, [projected.status]);
+  }, [musicScene]);
 
   const legalTargets = useMemo(() => {
     const set = new Set<CellId>();

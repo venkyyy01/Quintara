@@ -27,12 +27,28 @@ const STORAGE_KEY = "quintara-settings-v1";
 const DEFAULTS: UserSettings = {
   masterVolume: 0.6,
   effectsVolume: 0.8,
-  musicVolume: 0.25,
+  musicVolume: 0.42,
   haptics: true,
   showLegalMoves: true,
   reducedMotion: null,
   animationSpeed: 1,
 };
+
+/**
+ * One-time mix revision: the score was remixed substantially louder and
+ * fuller, so a music volume saved before the remix (≤ 0.3) would sound thin.
+ * Lift old saved values to the new floor once; explicit higher values stay.
+ */
+const MUSIC_VOLUME_FLOOR = 0.42;
+const SETTINGS_SCHEMA = 2;
+
+function applyMixRevision(record: Record<string, unknown>): void {
+  if (record.settingsSchema !== SETTINGS_SCHEMA) {
+    record.settingsSchema = SETTINGS_SCHEMA;
+    const saved = volume(record.musicVolume, DEFAULTS.musicVolume);
+    if (saved < MUSIC_VOLUME_FLOOR) record.musicVolume = MUSIC_VOLUME_FLOOR;
+  }
+}
 
 function volume(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value)
@@ -128,7 +144,11 @@ export const useSettings = create<SettingsStore>((set, get) => ({
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        set(sanitiseSettings(JSON.parse(raw)));
+        const parsed: unknown = JSON.parse(raw);
+        if (typeof parsed === "object" && parsed !== null) {
+          applyMixRevision(parsed as Record<string, unknown>);
+        }
+        set(sanitiseSettings(parsed));
       }
     } catch {
       // Fall back to defaults.
